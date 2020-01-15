@@ -15,6 +15,11 @@ class Orbit(object):
     def circular(self, mu, r):
         return Orbit(mu, r, np.sqrt(mu / r))
 
+
+    def __repr__(self):
+        return self.__class__.__name__ + "(mu={}, r={}, v={}, phi={})".format(
+            self.mu, self.r, self.v, self.phi)
+
     def __init__(self, mu, r, v, flight_path_angle = 0.0):
         self.mu = mu
         self.r = r

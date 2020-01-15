@@ -13,6 +13,10 @@ import numpy as np
 
 from orbit import Orbit
 
+def rotate_2d(theta):
+    return np.array([[np.cos(theta), -np.sin(theta)],
+                     [np.sin(theta),  np.cos(theta)]])
+
 class PatchedConic(Orbit):
     # Physical constants of earth--moon system
     D = 384402000.0 # distance from earth to moon in m
@@ -25,13 +29,15 @@ class PatchedConic(Orbit):
     r_soi = (mu / mu_earth)**0.4 * D
     
     def __init__(self, depart, arrive,
-                 lam1 = 0.0,
-                 rf   = 1837000.0):
+                 lam1    = 0.0,
+                 rf      = 1837000.0):
         """Construct a planar patched conic approximation of an earth--moon
         transfer.
 
         Args:
-          depart  earth-centered orbit at time of departure (post delta-v)
+          depart  earth-centered orbit at time of departure (post delta-v;
+                  delta-v is assumed to be relative to a circular orbit of
+                  the same radius)
           arrive  earth-centered orbit at SOI intercept
           lam1    spacecraft phase angle at arrival (angle between vector to
                   sphere-of-influence intercept and moon--earth
@@ -40,10 +46,10 @@ class PatchedConic(Orbit):
 
         """
 
-        self.depart = depart
-        self.arrive = arrive
-        self.lam1   = lam1
-        self.rf     = rf
+        self.depart  = depart
+        self.arrive  = arrive
+        self.lam1    = lam1
+        self.rf      = rf
 
         # E: eccentric anomaly in the transit orbit; E0 is departure,
         #    E1 is SOI intercept
@@ -58,6 +64,8 @@ class PatchedConic(Orbit):
 
         # Get duration from departure from earth (time 0) to SOI
         # intercept (time 1)
+        if arrive.a <= 0:
+            raise ValueError("expected elliptical trajectory")
         tof  = np.sqrt(arrive.a**3 / arrive.mu) * ((E1 - e * sE1) - (E0 - e * sE0))
 
 
@@ -97,6 +105,7 @@ class PatchedConic(Orbit):
         self.r   = self.r_soi
         self.v   = v2
         self.phi = phi2
+        self.eps = eps2
 
         # Additional parameters
         self.Q   = self.r * self.v**2 / self.mu
@@ -114,13 +123,15 @@ class PatchedConic(Orbit):
         # Calculate eccentricity and semimajor axis using Eqs 52--53.
         Q2 = self.Q
         self.ef   = np.sqrt(1.0 + Q2 * (Q2 - 2.0) * np.cos(phi2)**2)
-        self.af   = orbit.r / (2.0 - Q2)
+        self.af   = self.r / (2.0 - Q2)
 
         # Position and velocity at perilune
         self.rpl  = self.af * (1.0 - self.ef)
         self.vpl  = np.sqrt((self.mu * (1.0 + self.ef)) / (self.af * (1.0 - self.ef)))
 
+        # Compute gradients for SGRA
         self.compute_gradients()
+
         
     def compute_gradients(self):
         orbit = self
@@ -151,7 +162,7 @@ class PatchedConic(Orbit):
         ef = self.ef
         af = self.af
 
-
+        lam1  = orbit.lam1
 
          # Eq. 57--61
         self.dv1_dv0     = v0 / v1
@@ -170,19 +181,18 @@ class PatchedConic(Orbit):
         self.drpl_def    = af
         self.drpl_dv0    = self.drpl_daf * self.daf_dv0 - self.drpl_def * self.def_dv0
 
-        # Optimization state for Newton's method
-        self.x = np.array([orbit.lam1, v0])
+        # Optimization state for Newton's method / restoration
+        self.x = np.array([lam1, v0])
 
         # Additional shorthand variables needed for SGRA optimization
         mu      = orbit.depart.mu
         mu_moon = orbit.mu
-        r0 = orbit.depart.r
+        r0    = orbit.depart.r
         r1    = orbit.arrive.r
         r2    = orbit.r
         D     = orbit.D
-        lam1  = orbit.lam1
-        slam1 = np.sin(orbit.lam1)
-        clam1 = np.cos(orbit.lam1)
+        slam1 = np.sin(lam1)
+        clam1 = np.cos(lam1)
         h     = orbit.arrive.h
         
         self.deltav1 = np.abs(v0 - np.sqrt(mu / r0))
@@ -226,7 +236,7 @@ class PatchedConic(Orbit):
         self.f              = self.deltav1 + self.deltav2
         self.df_dx          = np.array([[self.df_dlam1, self.df_dv0]]).T
         self.dg_dx          = np.array([[self.dg_dlam1, self.dg_dv0]]).T
-        self.g              = orbit.rf
+        self.g              = orbit.rf - self.rpl
 
         # SGRA computations
         dgdx = self.dg_dx # phi_x
@@ -235,20 +245,106 @@ class PatchedConic(Orbit):
         self.lam = -P.dot(dgdx.T.dot(dfdx))[0,0]
         self.P = self.g**2
 
-    def dF_dx(self, lam):
-        """Augmented function F derivative (for SGRA)"""
-        return self.df_dx + self.dg_dx.dot(lam)
+        self.dF_dx = dfdx + dgdx.dot(self.lam)
+        self.F     = self.f + self.g * self.lam
 
-    def F(self, lam):
-        """Augmented function for SCGRA."""
-        return self.f + self.g * lam
+        Fx = self.dF_dx
+        self.Q_opt = Fx.T.dot(Fx)[0,0]
 
-    def Q(self, lam):
-        """Stopping condition for SCGRA"""
-        Fx = self.dF_dx(lam)
-        return Fx.T.dot(Fx)[0,0]
+    def plot(self, alpha = 1.0, ax = None, v_scale = 100.0):
 
-class SGRAOptimizer(object):
+        import matplotlib.pyplot as plt
+        from matplotlib.patches import Circle
+        from scipy.linalg import norm
+
+        if ax is None:
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+
+            # Plot moon, earth
+            moon = Circle( (x.D, 0.0), 1737400.0, fc='grey', ec='grey', alpha=0.5)
+            earth = Circle( (0.0, 0.0), 6371000.0, fc='blue', ec='blue', alpha=0.5)
+            ax.add_patch(moon)
+            ax.add_patch(earth)
+            
+            # Plot orbit of moon
+            moon_orbit = Circle( (0.0, 0.0), self.D, fill=False, fc=None, alpha=0.5)
+            ax.add_patch(moon_orbit)
+
+            # Plot lunar SOI
+            soi = Circle( (self.D, 0.0), self.r_soi, fill=False, fc=None, alpha=0.5)
+            ax.add_patch(soi)
+
+        # Plot from earth to intercept point, intercept point to moon
+        # Find intercept point, call it r1
+        r1 = rotate_2d(self.gam1).dot(np.array([self.arrive.r, 0.0]))
+        ax.plot([0.0, r1[0], self.D],
+                [0.0, r1[1], 0.0], c='k', alpha=alpha)
+
+        # Plot moon-relative velocity
+        r2_moon = rotate_2d(-self.lam1).dot(np.array([-self.r_soi, 0.0]))
+        r2_earth = r2_moon + np.array([x.D, 0.0])
+        v2_earth = rotate_2d(self.eps).dot(r2_moon / norm(r2_moon)) * -self.v * v_scale
+        ax.plot([r2_earth[0], r2_earth[0] + v2_earth[0]],
+                [r2_earth[1], r2_earth[1] + v2_earth[1]], c='r', alpha=alpha)
+
+        # Plot earth-relative velocity
+        v1 = rotate_2d(np.pi/2 - self.arrive.phi).dot(r1 / norm(r1)) * self.arrive.v * v_scale
+        ax.plot([r1[0], r1[0] + v1[0]], [r1[1], r1[1] + v1[1]], c='g', alpha=alpha)
+
+        vm = np.array([0.0, -self.V]) * v_scale
+        ax.plot([r1[0] + v1[0], r1[0] + v1[0] + vm[0]], [r1[1] + v1[1], r1[1] + v1[1] + vm[1]], c='b', alpha=alpha)
+        
+        return ax
+
+            
+
+
+    #def dF_dx(self, lam):
+    #    """Augmented function F derivative (for SGRA)"""
+    #    return self.df_dx + self.dg_dx.dot(lam)
+
+    #def F(self, lam):
+    #    """Augmented function for SCGRA."""
+    #    return self.f + self.g * lam
+
+    #def Q(self, lam):
+    #    """Stopping condition for SCGRA"""
+    #    Fx = self.dF_dx(lam)
+    #    return Fx.T.dot(Fx)[0,0]
+
+def init_patched_conic(solution_x, dx = np.array([[0.0], [0.0]])):
+    """Take some PatchedConic object and vary it in its optimization
+    parameters by a vector dx, returning a new PatchedConic.
+
+    """
+    if type(solution_x) == PatchedConic:
+        solution_x = (solution_x.depart.r, solution_x.depart.v, solution_x.depart.phi, solution_x.lam1, solution_x.rf)
+    
+    D         = PatchedConic.D
+    r_soi     = PatchedConic.r_soi
+    r0        = solution_x[0]
+    v0        = solution_x[1] + dx[1,0]
+    phi0      = solution_x[2]
+    lam1      = solution_x[3] + dx[0,0]
+    rf        = solution_x[4]
+    r1        = np.sqrt(D**2 + r_soi**2 - 2.0 * D * r_soi * np.cos(lam1))
+    depart    = Orbit(PatchedConic.mu_earth, r0, v0, phi0)
+    intercept = depart.at(r1, sign='+')
+    if np.isnan(intercept.v):
+        import pdb
+        pdb.set_trace()
+        raise ValueError("expected radius is not reached")
+    
+    return PatchedConic(depart, intercept, lam1 = lam1, rf = rf)
+
+    
+def Psi(alpha, solution_x, p):
+    solution_y = init_patched_conic(solution_x, -p * alpha)
+    return solution_y.f + solution_y.g * solution_x.lam
+
+
+class SGRA(object):
     D = PatchedConic.D
     V = PatchedConic.V
     OMEGA = PatchedConic.OMEGA
@@ -256,84 +352,164 @@ class SGRAOptimizer(object):
     mu_earth = PatchedConic.mu_earth
     r_soi = PatchedConic.r_soi
     
-    def __init__(self, r0, v0, rf,
-                 lam1           = 70.0 * np.pi/180.0,
-                 dv0            = 3150.0,
-                 phi0           = 0.0,
-                 rpg            = 185000.0 + 6371400.0,
+    def __init__(self,
                  gtol           = 5e-8,
-                 ftol           = 2e-15,
+                 ftol           = 1e-15,
+                 Qtol           = 2e-15,
                  alphatol       = 1e-6,
-                 et_soi         = None,
-                 max_iterations = 100,
                  beta           = 1.0):
-        self.rf             = rf
-        self.lam1           = lam1
-        self.dv0            = dv0
-        self.r0             = r0
-        self.phi0           = phi0
         self.gtol           = gtol
         self.ftol           = ftol
+        self.Qtol           = Qtol
+        self.alphatol       = alphatol
         self.beta0          = beta
 
-        # Find the radius of encounter with the moon's SOI
-        self.r1             = np.sqrt(self.D**2 + self.r_soi**2 - 2.0 * self.D * self.r_soi * np.cos(lam1))
+    def optimize_v0(self, solution_x,
+                    max_iterations = 100,
+                    verbose        = False):
+        """Find a departure velocity which allows us to fulfill our perilune
+        constraint to within gtol.
 
-        if not self.update(v0):
-            raise ValueError("orbit is invalid, produces no constraint gradient")
+        Args:
+            max_iterations   maximum number of iterations
+            verbose          print Newton's method output each iteration
 
-    def update(self, v0):
-        # Use v0 to find v1 with the departure trajectory.
-        depart = Orbit(self.mu_earth, self.r0, v0, self.phi0)
-        intercept = depart.at(self.r1, sign='+')
+        Yields:
+            The PatchedConic object with all of the relevant
+        optimization information during each iteration.
 
-        # Now we can get a hyperbolic arrival orbit (moon-centered)
-        x = PatchedConic(depart, intercept, lam1 = self.lam1, rf = self.rf)
-
-        if np.isnan(x.dg_dv0):
-            import pdb
-            pdb.set_trace()
-            return False
-        else:
-            self.v0 = v0
-            self.lunar = x
-            return True
-
-    def optimize_v0(self, max_iterations = 100):
-        x = self.lunar
+        """
         beta = self.beta0
         
         for ii in range(0, max_iterations):
 
             # Stop if we reach our desired constraint tolerance
-            if np.abs(x.g) <= self.gtol:
+            if np.abs(solution_x.g) <= self.gtol:
                 break
 
-            dv0 = -beta * (x.g / x.dg_dv0)
-
-            prev_v0 = self.v0
-            v0 += dv0
+            dv0 = -beta * (solution_x.g / solution_x.dg_dv0)
 
             # If update fails, try again with a smaller beta. If it
             # passes, reset beta to the initial, and keep on going.
-            if self.update(v0):
-                x = self.lunar
+            try:
+                solution_xt = init_patched_conic(solution_x, np.array([[0.0], [dv0]]))
+
+                # If the result is better, keep it; otherwise discard and split beta
+                if np.abs(solution_xt.g) < np.abs(solution_x.g):
+                    solution_x = solution_xt
+                    retry = False
+                else:
+                    retry = True
+                
+            except ValueError:
+                retry = True
+
+            if retry:
+                beta *= 0.5
+            else:
+                if verbose:
+                    print("v0:         {}".format(solution_x.depart.v))
+                    print("constraint: {}".format(solution_x.g))
+                    print("gradient:   {}".format(solution_x.dg_dv0))
+                    print("beta:       {}".format(beta))
+                    print("dv0:        {}".format(dv0))
+                    print("eps:        {}".format(solution_x.eps * 180/np.pi))
+                    print("------------------------------")
+                
+                yield solution_x
+
                 beta = self.beta0
 
-                yield x
-            else:
-                beta *= 0.5
-                v0 = prev_v0
 
-    def optimize_deltav(self, max_iterations = 100):
-        raise NotImplemented("FIXME")
+    def optimize_deltav(self, solution_x,
+                        max_restore_iterations  = 100,
+                        max_optimize_iterations = 100,
+                        verbose                 = False):
+
+        # Flags
+        underflow = False
+
+        # Start by optimizing until we meet our constraint.
+        self.optimize_v0(x, max_iterations = max_restore_iterations, verbose = verbose)
+        x = np.array([[self.lam1], [self.v0]]) # SGRA state
+        solution_xt = solution_x
+        xt = np.array(x)
+        current_f = solution_x.f
+
+        p   = solution_x.dF_dx
+        if self.conjugate:
+            Fx2 = solution_x.Q_opt
+
+        for jj in range(0, max_optimize_iterations):
+            if underflow:
+                raise ValueError("unable to optimize due to restoration underflow")
+            elif self.Q_opt <= self.Qtol:
+                break
+
+            alpha = minimize_scalar(Psi, method = 'golden', bracket = [1e-14, 3e-5],
+                                    args=(self,p), tol=self.alphatol).x
+            for ii in range(0, max_restore_iterations):
+                dx = -alpha * p
+                y  =  xt + dx
+                if np.all(y == xt):
+                    underflow = True
+                    break
+
+                solution_y = init_patched_conic(solution_xt, dx)
+
+                if self.conjugate:
+                    Fhatx2 = np.array(Fx2)
+                    phat   = np.array(p)
+
+                solution_xt = restore_patched_conic(solution_y,
+                                                    tol            = self.gtol,
+                                                    max_iterations = max_restore_iterations,
+                                                    verbose        = verbose)
+
+                if self.conjugate:
+                    Fx2 = solution_xt.Q_opt
+                    gamma = Fx2 / Fhatx2
+                
+                p   = solution_xt.dF_dx + gamma * phat
+
+                # If original solution is better than the current one, try a smaller step
+                if solution_xt.f < self.f:
+                    break
+                else:
+                    alpha *= 0.9
+                    if alpha <= 1e-15:
+                        raise ValueError("unable to optimize due to step underflow")
+
+            if ii + 1 == max_iterations:
+                raise ValueError("exceeded max iterations during restoration")
+        
+        
+        # Looks like we found a result. Let's update the object.
+        self.lam1 = solution_xt.lam1
+        self.r1   = np.sqrt(self.D**2 + self.r_soi**2 - 2.0 * self.D * self.r_soi * np.cos(solution_xt.lam1))
+        self.update(solution_xt.v0)
 
 
 
 if __name__ == '__main__':
 
-    orbit  = Orbit.circular(PatchedConic.mu_earth, 185000.0 + 6371400.0) # earth parking
-    opt    = SGRAOptimizer(orbit.r, orbit.v, 1937.0)
-    for x in opt.optimize_v0():
-        import pdb
-        pdb.set_trace()
+    import matplotlib.pyplot as plt
+
+    ax = None
+
+    leo    = Orbit.circular(PatchedConic.mu_earth, 6371400.0 + 185000.0) # earth parking
+    x      = init_patched_conic((leo.r, leo.v + 3225.0, 0.0, np.pi/2.0, 1937000.0))
+    opt    = SGRA()
+    alpha  = 1.0
+    for x in opt.optimize_v0(x, verbose=True):
+        ax = x.plot(alpha = alpha, ax = ax)
+        alpha *= 0.5
+        
+        #import pdb
+        #pdb.set_trace()
+        pass
+
+    plt.show()
+
+    import pdb
+    pdb.set_trace()

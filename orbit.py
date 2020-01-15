@@ -39,6 +39,13 @@ class Orbit(object):
         return -self.mu / (2.0 * self.energy)
 
     @property
+    def b(self):
+        e = self.e
+        if e > 1:
+            raise ValueError("undefined semiminor axis for this orbit type")
+        return self.a * np.sqrt(1.0 - e**2)
+
+    @property
     def rp(self):
         return (1.0 - self.e) * self.a
 

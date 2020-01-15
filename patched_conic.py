@@ -20,7 +20,7 @@ def rotate_2d(theta):
 class PatchedConic(Orbit):
     # Physical constants of earth--moon system
     D = 384402000.0 # distance from earth to moon in m
-    OMEGA = 2.649e-3 # r/s
+    OMEGA = 2.649e-6 # r/s
     V = OMEGA * D # mean velocity of moon relative to earth in m/s
     
     R = 1737000.0 # m -- radius of moon
@@ -77,7 +77,7 @@ class PatchedConic(Orbit):
         nu1  = np.arccos(cnu1)
 
         # Get phase angle at arrival
-        sg1 = np.clip((self.r_soi / arrive.r) * np.sin(lam1), -1.0, 1.0)
+        sg1 = np.clip((self.r_soi / arrive.r) * np.sin(lam1), -1.0, 1.0) # Eq. 4
         gam1 = np.arcsin(sg1) # gam1 is opposite lam1 in the arrival
                               # triangle (see Fig 1); phase angle at
                               # arrival
@@ -86,19 +86,18 @@ class PatchedConic(Orbit):
         gam0 = nu1 - nu0 - gam1 - self.OMEGA * tof
 
         # Eq. 9: velocity relative to moon when we reach SOI
+        phi1 = arrive.phi # computed by Orbit.at()
         v1 = arrive.v
-        v2 = np.sqrt(v1**2 + self.V**2 - 2.0 * v1 * self.V * np.cos(arrive.phi - gam1))
-
-        # Angle of selenocentric velocity relative to moon's center
-        phi1 = arrive.phi
+        vm = self.V
+        v2 = np.sqrt(v1**2 + vm**2 - 2.0 * v1 * vm * np.cos(phi1 - gam1))
 
         # Compute miss angle of hyperbolic trajectory
-        seps2 = np.clip( (self.V * np.cos(lam1) - v1 * np.cos(lam1 + gam1 - phi1)) / -v2, -1.0, 1.0 )
+        seps2 = np.clip( (vm * np.cos(lam1) - v1 * np.cos(lam1 + gam1 - phi1)) / -v2, -1.0, 1.0 )
         eps2  = np.arcsin(seps2)
 
         # Eq. 10: Get selenocentric flight path angle 
         # right-hand side:
-        tan_lam1_pm_phi2 = - v1 * np.sin(phi1 - gam1) / (self.V - v1 * np.cos(phi1 - gam1))
+        tan_lam1_pm_phi2 = - v1 * np.sin(phi1 - gam1) / (vm - v1 * np.cos(phi1 - gam1))
         phi2 = np.arctan(tan_lam1_pm_phi2) - lam1 # flight path angle
 
         # Parameters for Orbit class
@@ -131,7 +130,6 @@ class PatchedConic(Orbit):
 
         # Compute gradients for SGRA
         self.compute_gradients()
-
         
     def compute_gradients(self):
         orbit = self
@@ -251,7 +249,7 @@ class PatchedConic(Orbit):
         Fx = self.dF_dx
         self.Q_opt = Fx.T.dot(Fx)[0,0]
 
-    def plot(self, alpha = 1.0, ax = None, v_scale = 100.0):
+    def plot(self, alpha = 1.0, ax = None, v_scale = 100000.0):
 
         import matplotlib.pyplot as plt
         from matplotlib.patches import Circle
@@ -332,9 +330,9 @@ def init_patched_conic(solution_x, dx = np.array([[0.0], [0.0]])):
     depart    = Orbit(PatchedConic.mu_earth, r0, v0, phi0)
     intercept = depart.at(r1, sign='+')
     if np.isnan(intercept.v):
-        import pdb
-        pdb.set_trace()
         raise ValueError("expected radius is not reached")
+    elif depart.energy >= 0:
+        raise ValueError("expected elliptical orbit")
     
     return PatchedConic(depart, intercept, lam1 = lam1, rf = rf)
 
@@ -374,7 +372,7 @@ class SGRA(object):
             max_iterations   maximum number of iterations
             verbose          print Newton's method output each iteration
 
-        Yields:
+i        Yields:
             The PatchedConic object with all of the relevant
         optimization information during each iteration.
 
@@ -409,11 +407,13 @@ class SGRA(object):
             else:
                 if verbose:
                     print("v0:         {}".format(solution_x.depart.v))
+                    print("ra:         {}".format(solution_x.depart.ra))
+                    print("eps:        {}".format(solution_x.eps * 180/np.pi))
                     print("constraint: {}".format(solution_x.g))
                     print("gradient:   {}".format(solution_x.dg_dv0))
                     print("beta:       {}".format(beta))
                     print("dv0:        {}".format(dv0))
-                    print("eps:        {}".format(solution_x.eps * 180/np.pi))
+
                     print("------------------------------")
                 
                 yield solution_x
@@ -498,18 +498,12 @@ if __name__ == '__main__':
     ax = None
 
     leo    = Orbit.circular(PatchedConic.mu_earth, 6371400.0 + 185000.0) # earth parking
-    x      = init_patched_conic((leo.r, leo.v + 3225.0, 0.0, np.pi/2.0, 1937000.0))
+    x      = init_patched_conic((leo.r, leo.v + 3200.0, 0.0, 90.0 * np.pi/180.0, 1937400.0))
     opt    = SGRA()
     alpha  = 1.0
     for x in opt.optimize_v0(x, verbose=True):
         ax = x.plot(alpha = alpha, ax = ax)
-        alpha *= 0.5
+        alpha *= 0.9
         
-        #import pdb
-        #pdb.set_trace()
-        pass
-
     plt.show()
 
-    import pdb
-    pdb.set_trace()

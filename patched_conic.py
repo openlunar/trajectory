@@ -11,6 +11,11 @@
 
 import numpy as np
 
+np.seterr(divide='raise', invalid='raise')
+
+#from scipy.optimize import newton
+from scipy.linalg import norm
+
 from orbit import Orbit
 
 def rotate_2d(theta):
@@ -23,14 +28,14 @@ class PatchedConic(Orbit):
     OMEGA = 2.649e-6 # r/s
     V = OMEGA * D # mean velocity of moon relative to earth in m/s
     
-    R = 1737000.0 # m -- radius of moon
-    mu = 4.9048695e12 # m^3/s^2 moon gravitational constant
-    mu_earth = 3.986004418e14 # m^3/s^2 earth gravitational constant
+    R = 1737400.0 # m -- radius of moon
+    mu = 4.902800066163796e12 # m^3/s^2 moon gravitational constant
+    mu_earth = 3.986004354360959e14 # m^3/s^2 earth gravitational constant
     r_soi = (mu / mu_earth)**0.4 * D
     
     def __init__(self, depart, arrive,
-                 lam1    = 0.0,
-                 rf      = 1837000.0):
+                 lam1      = 0.0,
+                 rf        = 1837000.0):
         """Construct a planar patched conic approximation of an earth--moon
         transfer.
 
@@ -128,25 +133,77 @@ class PatchedConic(Orbit):
         self.rpl  = self.af * (1.0 - self.ef)
         self.vpl  = np.sqrt((self.mu * (1.0 + self.ef)) / (self.af * (1.0 - self.ef)))
 
-        # Compute gradients for SGRA
-        self.compute_gradients()
+        self.deltav1 = np.abs(self.depart.v - np.sqrt(self.mu_earth / self.depart.r))
+        self.deltav2 = self.vpl - self.vf
+
+        # Objectives
+        self.g = self.rf - self.rpl
+        self.f = self.deltav1 + self.deltav2
+        self.P = self.g**2
+
+    def plot(self, alpha = 1.0, ax = None, v_scale = 100000.0):
+
+        import matplotlib.pyplot as plt
+        from matplotlib.patches import Circle
+        from scipy.linalg import norm
+
+        if ax is None:
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+
+            # Plot moon, earth
+            moon = Circle( (x.D, 0.0), 1737400.0, fc='grey', ec='grey', alpha=0.5)
+            earth = Circle( (0.0, 0.0), 6378136.6, fc='blue', ec='blue', alpha=0.5)
+            ax.add_patch(moon)
+            ax.add_patch(earth)
+            
+            # Plot orbit of moon
+            moon_orbit = Circle( (0.0, 0.0), self.D, fill=False, fc=None, alpha=0.5)
+            ax.add_patch(moon_orbit)
+
+            # Plot lunar SOI
+            soi = Circle( (self.D, 0.0), self.r_soi, fill=False, fc=None, alpha=0.5)
+            ax.add_patch(soi)
+
+        # Plot from earth to intercept point, intercept point to moon
+        # Find intercept point, call it r1
+        r1 = rotate_2d(self.gam1).dot(np.array([self.arrive.r, 0.0]))
+        ax.plot([0.0, r1[0], self.D],
+                [0.0, r1[1], 0.0], c='k', alpha=alpha)
+
+        # Plot moon-relative velocity
+        r2_moon = rotate_2d(-self.lam1).dot(np.array([-self.r_soi, 0.0]))
+        r2_earth = r2_moon + np.array([x.D, 0.0])
+        v2_earth = rotate_2d(self.eps).dot(r2_moon / norm(r2_moon)) * -self.v * v_scale
+        ax.plot([r2_earth[0], r2_earth[0] + v2_earth[0]],
+                [r2_earth[1], r2_earth[1] + v2_earth[1]], c='r', alpha=alpha)
+
+        # Plot earth-relative velocity
+        v1 = rotate_2d(np.pi/2 - self.arrive.phi).dot(r1 / norm(r1)) * self.arrive.v * v_scale
+        ax.plot([r1[0], r1[0] + v1[0]], [r1[1], r1[1] + v1[1]], c='g', alpha=alpha)
+
+        vm = np.array([0.0, -self.V]) * v_scale
+        ax.plot([r1[0] + v1[0], r1[0] + v1[0] + vm[0]], [r1[1] + v1[1], r1[1] + v1[1] + vm[1]], c='b', alpha=alpha)
         
-    def compute_gradients(self):
-        orbit = self
+        return ax
+
+
+class PatchedConicGradients(object):
+    def __init__(self, patched_conic):
         
         # Setup some shorthand notations
-        v0 = orbit.depart.v
-        v1 = orbit.arrive.v
-        v2 = orbit.v
-        vM = orbit.V
+        v0 = patched_conic.depart.v
+        v1 = patched_conic.arrive.v
+        v2 = patched_conic.v
+        vM = patched_conic.V
         
-        Q2 = orbit.Q
+        Q2 = patched_conic.Q
 
-        phi0 = orbit.depart.phi
-        phi1 = orbit.arrive.phi
-        gam1 = orbit.gam1
+        phi0 = patched_conic.depart.phi
+        phi1 = patched_conic.arrive.phi
+        gam1 = patched_conic.gam1
 
-        phi2 = orbit.phi
+        phi2 = patched_conic.phi
         cphi2 = np.cos(phi2)
         sphi2 = np.sin(phi2)
 
@@ -157,12 +214,22 @@ class PatchedConic(Orbit):
         cpmg1 = np.cos(phi1 - gam1)
         spmg1 = np.sin(phi1 - gam1)
 
-        ef = self.ef
-        af = self.af
+        ef = patched_conic.ef
+        af = patched_conic.af
 
-        lam1  = orbit.lam1
+        lam1  = patched_conic.lam1
 
-         # Eq. 57--61
+        mu      = patched_conic.depart.mu
+        mu_moon = patched_conic.mu
+        r0    = patched_conic.depart.r
+        r1    = patched_conic.arrive.r
+        r2    = patched_conic.r
+        D     = patched_conic.D
+        slam1 = np.sin(lam1)
+        clam1 = np.cos(lam1)
+        h     = patched_conic.arrive.h
+
+        # Eq. 57--61
         self.dv1_dv0     = v0 / v1
         self.dphi1_dv0   = (v0 / v1 - v1 / v0) / (v1 * tphi1)
         self.dv2_dv0     = ((v1 - vM * cpmg1) / v2) * self.dv1_dv0 + ((v1 * vM * spmg1) / v2) * self.dphi1_dv0
@@ -174,7 +241,7 @@ class PatchedConic(Orbit):
         self.def_dv2     = 2 * Q2 * (Q2 - 1.0) * cphi2**2 / (ef * v2)
         self.def_dphi2   = -Q2 * (Q2 - 2.0) * cphi2 * sphi2 / ef
         self.def_dv0     = self.def_dv2 * self.dv2_dv0 + self.def_dphi2 * self.dphi2_dv0
-        self.daf_dv0     = (2 * af**2 * v2 * self.dv2_dv0) / self.mu
+        self.daf_dv0     = (2 * af**2 * v2 * self.dv2_dv0) / mu_moon
         self.drpl_daf    = 1.0 - ef # rpl = r_perilune
         self.drpl_def    = af
         self.drpl_dv0    = self.drpl_daf * self.daf_dv0 - self.drpl_def * self.def_dv0
@@ -182,19 +249,7 @@ class PatchedConic(Orbit):
         # Optimization state for Newton's method / restoration
         self.x = np.array([lam1, v0])
 
-        # Additional shorthand variables needed for SGRA optimization
-        mu      = orbit.depart.mu
-        mu_moon = orbit.mu
-        r0    = orbit.depart.r
-        r1    = orbit.arrive.r
-        r2    = orbit.r
-        D     = orbit.D
-        slam1 = np.sin(lam1)
-        clam1 = np.cos(lam1)
-        h     = orbit.arrive.h
-        
-        self.deltav1 = np.abs(v0 - np.sqrt(mu / r0))
-        self.deltav2 = orbit.vpl - orbit.vf
+
 
         self.dv1_dlam1 = -mu * D * r2 * slam1 / (v1 * r1**3)    # Eq. 66
         self.dphi1_dlam1   = h * D * r2 * slam1 / (v1 * r1**3 * sphi1) - h * D * r2 * mu * slam1 / (v1**3 * r1**4 * sphi1) # Eq. 67
@@ -231,69 +286,23 @@ class PatchedConic(Orbit):
         self.dvpl_dv0       = self.dvpl_def * self.def_dv0 + self.dvpl_daf * self.daf_dv0
         self.ddeltav2_dv0   = self.ddeltav2_dvpl * self.dvpl_dv0
         self.df_dv0         = self.ddeltav1_dv0 + self.ddeltav2_dv0
-        self.f              = self.deltav1 + self.deltav2
+
         self.df_dx          = np.array([[self.df_dlam1, self.df_dv0]]).T
         self.dg_dx          = np.array([[self.dg_dlam1, self.dg_dv0]]).T
-        self.g              = orbit.rf - self.rpl
+
 
         # SGRA computations
         dgdx = self.dg_dx # phi_x
         dfdx = self.df_dx # f_x
         P = 1.0 / dgdx.T.dot(dgdx)
-        self.lam = -P.dot(dgdx.T.dot(dfdx))[0,0]
-        self.P = self.g**2
 
-        self.dF_dx = dfdx + dgdx.dot(self.lam)
-        self.F     = self.f + self.g * self.lam
-
-        Fx = self.dF_dx
-        self.Q_opt = Fx.T.dot(Fx)[0,0]
-
-    def plot(self, alpha = 1.0, ax = None, v_scale = 100000.0):
-
-        import matplotlib.pyplot as plt
-        from matplotlib.patches import Circle
-        from scipy.linalg import norm
-
-        if ax is None:
-            fig = plt.figure()
-            ax = fig.add_subplot(111)
-
-            # Plot moon, earth
-            moon = Circle( (x.D, 0.0), 1737400.0, fc='grey', ec='grey', alpha=0.5)
-            earth = Circle( (0.0, 0.0), 6371000.0, fc='blue', ec='blue', alpha=0.5)
-            ax.add_patch(moon)
-            ax.add_patch(earth)
-            
-            # Plot orbit of moon
-            moon_orbit = Circle( (0.0, 0.0), self.D, fill=False, fc=None, alpha=0.5)
-            ax.add_patch(moon_orbit)
-
-            # Plot lunar SOI
-            soi = Circle( (self.D, 0.0), self.r_soi, fill=False, fc=None, alpha=0.5)
-            ax.add_patch(soi)
-
-        # Plot from earth to intercept point, intercept point to moon
-        # Find intercept point, call it r1
-        r1 = rotate_2d(self.gam1).dot(np.array([self.arrive.r, 0.0]))
-        ax.plot([0.0, r1[0], self.D],
-                [0.0, r1[1], 0.0], c='k', alpha=alpha)
-
-        # Plot moon-relative velocity
-        r2_moon = rotate_2d(-self.lam1).dot(np.array([-self.r_soi, 0.0]))
-        r2_earth = r2_moon + np.array([x.D, 0.0])
-        v2_earth = rotate_2d(self.eps).dot(r2_moon / norm(r2_moon)) * -self.v * v_scale
-        ax.plot([r2_earth[0], r2_earth[0] + v2_earth[0]],
-                [r2_earth[1], r2_earth[1] + v2_earth[1]], c='r', alpha=alpha)
-
-        # Plot earth-relative velocity
-        v1 = rotate_2d(np.pi/2 - self.arrive.phi).dot(r1 / norm(r1)) * self.arrive.v * v_scale
-        ax.plot([r1[0], r1[0] + v1[0]], [r1[1], r1[1] + v1[1]], c='g', alpha=alpha)
-
-        vm = np.array([0.0, -self.V]) * v_scale
-        ax.plot([r1[0] + v1[0], r1[0] + v1[0] + vm[0]], [r1[1] + v1[1], r1[1] + v1[1] + vm[1]], c='b', alpha=alpha)
+        self.lam = (-dgdx.T.dot(dfdx) / (dgdx.T.dot(dgdx)))[0]
         
-        return ax
+        # Compute derivative of merit function F
+        self.dF_dx = dfdx + dgdx.dot(self.lam)
+
+        # Compute stopping condition
+        self.Q = self.dF_dx.T.dot(self.dF_dx)[0,0]
 
             
 
@@ -311,21 +320,16 @@ class PatchedConic(Orbit):
     #    Fx = self.dF_dx(lam)
     #    return Fx.T.dot(Fx)[0,0]
 
-def init_patched_conic(solution_x, dx = np.array([[0.0], [0.0]])):
-    """Take some PatchedConic object and vary it in its optimization
-    parameters by a vector dx, returning a new PatchedConic.
 
-    """
-    if type(solution_x) == PatchedConic:
-        solution_x = (solution_x.depart.r, solution_x.depart.v, solution_x.depart.phi, solution_x.lam1, solution_x.rf)
-    
+def init_patched_conic(x,
+                       rf   = 1837400.0,
+                       r0   = 6371000.0 + 185000.0,
+                       phi0 = 0.0):
+    """Generic objective function. x is [lam1, v0]."""
+    lam1      = x[0]
+    v0        = x[1]
     D         = PatchedConic.D
     r_soi     = PatchedConic.r_soi
-    r0        = solution_x[0]
-    v0        = solution_x[1] + dx[1,0]
-    phi0      = solution_x[2]
-    lam1      = solution_x[3] + dx[0,0]
-    rf        = solution_x[4]
     r1        = np.sqrt(D**2 + r_soi**2 - 2.0 * D * r_soi * np.cos(lam1))
     depart    = Orbit(PatchedConic.mu_earth, r0, v0, phi0)
     intercept = depart.at(r1, sign='+')
@@ -333,177 +337,433 @@ def init_patched_conic(solution_x, dx = np.array([[0.0], [0.0]])):
         raise ValueError("expected radius is not reached")
     elif depart.energy >= 0:
         raise ValueError("expected elliptical orbit")
-    
+
     return PatchedConic(depart, intercept, lam1 = lam1, rf = rf)
 
+def patched_conic_g(x, *args):
+    """Objective function for achieving the final radius (also the constraint)."""
+    return init_patched_conic(x, *args).g
+
+
+def patched_conic_nr_g(x, lam1, rf, r0, phi0):
+    """Input for newton-raphson iteration"""
+    return patched_conic_g(np.array([lam1, x]), rf, r0, phi0)
+
+def patched_conic_dg_dv0(x, lam1, rf, r0, phi0):
+    pcx = init_patched_conic(np.array([lam1, x]), rf, r0, phi0)
+    dx = PatchedConicGradients(pcx)
+    print("g      = {}".format(pcx.g))
+    print("dg_dv0 = {}".format(dx.dg_dv0))
+    return dx.dg_dv0
+
+def patched_conic_g_dg_dv0(x, lam1, rf, r0, phi0):
+    pcx = init_patched_conic(np.array([lam1, x]), rf, r0, phi0)
+    dx = PatchedConicGradients(pcx)
+    print("g      = {}".format(pcx.g))
+    print("dg_dv0 = {}".format(dx.dg_dv0))
+    return pcx.g, dx.dg_dv0
+
+
+def patched_conic_f(x, *args):
+    """Objective function for minimizing total delta-v."""
+    return init_patched_conic(x, *args).f
     
-def Psi(alpha, solution_x, p):
-    solution_y = init_patched_conic(solution_x, -p * alpha)
-    return solution_y.f + solution_y.g * solution_x.lam
 
+def patched_conic_df_dg(x, *args):
+    pc = init_patched_conic(x, *args)
+    dpc = PatchedConicGradients(pc)
+    return (dpc.df_dv0, dpc.dg_dv0)
 
-class SGRA(object):
-    D = PatchedConic.D
-    V = PatchedConic.V
-    OMEGA = PatchedConic.OMEGA
-    mu_moon = PatchedConic.mu
-    mu_earth = PatchedConic.mu_earth
-    r_soi = PatchedConic.r_soi
+def dPsi_dalpha(alpha, x, *args):
+    lam = args[-2]
+    p = args[-1].reshape(2)
+    args = args[0:-2]
+    try:
+        pcy = init_patched_conic(x - p * alpha, *args)
+        dpcy = PatchedConicGradients(pcy)
+        return -dpcy.Q
+    except (ValueError, FloatingPointError):
+        return np.float('nan')
+
     
-    def __init__(self,
-                 gtol           = 5e-8,
-                 ftol           = 1e-15,
-                 Qtol           = 2e-15,
-                 alphatol       = 1e-6,
-                 beta           = 1.0):
-        self.gtol           = gtol
-        self.ftol           = ftol
-        self.Qtol           = Qtol
-        self.alphatol       = alphatol
-        self.beta0          = beta
-
-    def optimize_v0(self, solution_x,
-                    max_iterations = 100,
-                    verbose        = False):
-        """Find a departure velocity which allows us to fulfill our perilune
-        constraint to within gtol.
-
-        Args:
-            max_iterations   maximum number of iterations
-            verbose          print Newton's method output each iteration
-
-i        Yields:
-            The PatchedConic object with all of the relevant
-        optimization information during each iteration.
-
-        """
-        beta = self.beta0
+def Psi(alpha, x, *args):
+    lam = args[-2]
+    p = args[-1].reshape(2)
+    args = args[0:-2]
+    try:
+        pcy = init_patched_conic(x - p * alpha, *args)
+        #dpcy = PatchedConicGradients(pcy)
+        #lam = dpcy.lam
         
-        for ii in range(0, max_iterations):
+        #print("alpha = {}\tlam = {}\tf = {}\tg = {}".format(alpha, lam, pcy.f, pcy.g))
+        #print("{}: {}".format(alpha, pcy.f + pcy.g * lam))
+        return pcy.f + pcy.g * lam
+    except (ValueError, FloatingPointError):
+        return np.float('nan')
 
-            # Stop if we reach our desired constraint tolerance
-            if np.abs(solution_x.g) <= self.gtol:
+
+def Psi_dPsi_dalpha(alpha, x, *args):
+    lam = args[-2]
+    p = args[-1].reshape(2)
+    args = args[0:-2]
+    try:
+        pcy = init_patched_conic(x - p * alpha, *args)
+        Psi = pcy.f + pcy.g * lam
+        dPsi_dalpha = dpcy.df_dx + dpcy.dg_dx * lam
+        return (Psi, dPsi_dalpha)
+        
+    except (ValueError, FloatingPointError):
+        #print("{}: nan".format(alpha))
+        return (np.float('nan'), np.float('nan'))
+
+
+def find_gradient(x, *args, conjugate = False,
+                  dfdx         = None,
+                  dgdx         = None,
+                  dFdx2_prev   = None,
+                  p_prev       = None,
+                  alphatol     = 1e-8,
+                  alphabracket = [1e-11, 0.1],
+                  maxiter      = 100,
+                  plot         = True):
+
+    from scipy.optimize import minimize_scalar
+    
+    # Compute penalty parameter
+    lam = (-dgdx.T.dot(dfdx) / (dgdx.T.dot(dgdx)))[0,0]
+
+    # Compute gradient of merit function. Use this as the direction
+    # for the alpha search.
+    dFdx = (dfdx + dgdx * lam).flatten()
+    if conjugate:
+        dFdx2 = dFdx.T.dot(dFdx)
+        if p_prev is None:
+            p_prev = np.zeros_like(x)
+            gamma  = 0.0
+        else:
+            gamma = dFdx2 / dFdx2_prev
+        p = dFdx + p_prev * gamma
+        import pdb
+        pdb.set_trace()
+    else:
+        p = dFdx
+        dFdx2 = dFdx.T.dot(dFdx)
+
+    # Find optimal alpha, where dPsi/dalpha is 0
+    #
+    # Use 'golden', because this appears to be the only method that
+    # tolerates nans.
+    alpha = newton(Psi,
+                    alphabracket[0], (x, *args, lam, p),
+                    tol     = alphatol,
+                    maxiter = maxiter,
+                    disp    = True,
+                    minimize = True)
+
+    if plot:
+        try:
+            import matplotlib.pyplot as plt
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            da = (alpha - alphabracket[0]) / 50.0
+            aa = np.arange(0.0, alpha + da, da)
+            dpsi = np.zeros_like(aa)
+            psi = np.zeros_like(dpsi)
+            for ii in range(0, len(aa)):
+                dpsi[ii] = dPsi_dalpha(aa[ii], x, *args, lam, p)
+                psi[ii]  = Psi(aa[ii], x, *args, lam, p)
+            ax.scatter(aa, psi)
+            #ax.scatter(aa, dpsi)
+            ax.axvline(alpha, c='r')
+            plt.show()
+        except ZeroDivisionError:
+            pass
+    
+
+
+    return alpha, p, dFdx2
+
+def find_restore_step(y, *args, maxiter=100, disp=True):
+    pcy = init_patched_conic(y, *args)
+    xt = y + 0.0
+    pcxt = pcy
+    dpcxt = PatchedConicGradients(pcxt)
+
+    k = 1.0
+    P_xt = float('inf')
+
+    jj = 0
+    while P_xt > pcy.P:
+        #print("find_restore_step: {}".format(k))
+
+        dgdx = dpcxt.dg_dx.flatten()
+        
+        sigma = pcxt.g * (k / (dgdx.dot(dgdx)))
+        dy = dgdx * -sigma
+
+        y_test = xt + dy.flatten()
+        if disp:
+            print("{}: xt = {}, g = {}, dg/dx = {}, sigma = {}, dy = {}".format(jj, xt, pcxt.g, dgdx, sigma, dy))
+        try:
+            pcy_test  = init_patched_conic(y, *args)
+            dpcy_test = PatchedConicGradients(pcy_test)
+            xt        = y_test
+            pcxt      = pcy_test
+            dpcxt     = dpcy_test
+            P_xt      = pcxt.P
+        except FloatingPointError:
+            #pcxt = init_patched_conic(xt, *args)
+            #dpcxt = PatchedConicGradients(pcxt)
+            pass
+        
+        k *= 0.5
+        jj += 1
+
+        if jj == maxiter:
+            raise ValueError("exceeded max iterations (restore step search)")
+
+    return xt, pcxt, dpcxt
+
+
+def restoration(y, *args, tol=1e-5, maxiter=100, sigma_maxiter=100):
+    xt, pcxt, dpcxt = find_restore_step(y, *args, maxiter = sigma_maxiter)
+
+    ii = 0
+    while pcxt.P > tol:
+        y = xt
+        YS.append(y)
+        xt, pcxt, dpcxt = find_restore_step(y, *args, maxiter = sigma_maxiter)
+
+        if norm(xt - y) < tol:
+            print("Skipping restoration (y == xt)")
+            return xt, pcxt, dpcxt
+
+        if ii >= maxiter:
+            raise ValueError("exceeded max iterations (restoration phase)")
+        ii += 1
+        
+    return xt, pcxt, dpcxt
+
+
+def newton_eval(fun_fprime, x, *args, step = 1e-11):
+    fdata = fun_fprime(x, *args)
+    if type(fdata) == tuple:
+        f, df_dx = fdata
+    else:
+        f = fdata
+        f1 = fun_fprime(x - step, *args)
+        f2 = fun_fprime(x + step, *args)
+        df_dx = (f2 - f1) / (2 * step)
+    return f, df_dx
+
+def newton(fun_fprime, x, args,
+           tol         = 5e-5,
+           step        = 1e-6,
+           maxiter     = 100,
+           beta0       = 1.0,
+           beta_factor = 0.5,
+           disp        = False,
+           minimize    = False):
+    """Find a departure velocity which allows us to fulfill our perilune
+    constraint to within gtol. Use Newton's method, but must be
+    sensitive to overshooting resulting in nans.
+
+    """
+    beta = beta0
+    
+    f, df_dx = newton_eval(fun_fprime, x, *args)
+    for ii in range(0, maxiter):
+        
+        if disp:
+            print("{}: x = {}, f = {}, dfdx = {}".format(ii, x, f, df_dx))
+
+        # Stop if we reach our desired constraint tolerance
+        if not minimize and np.abs(f) <= tol: # newton's method
+            break
+
+        try:
+            dx = -beta * (f / df_dx)
+            print("dx = {}".format(dx))
+        except FloatingPointError:
+            if minimize:
                 break
-
-            dv0 = -beta * (solution_x.g / solution_x.dg_dv0)
-
-            # If update fails, try again with a smaller beta. If it
-            # passes, reset beta to the initial, and keep on going.
-            try:
-                solution_xt = init_patched_conic(solution_x, np.array([[0.0], [dv0]]))
-
-                # If the result is better, keep it; otherwise discard and split beta
-                if np.abs(solution_xt.g) < np.abs(solution_x.g):
-                    solution_x = solution_xt
-                    retry = False
-                else:
-                    retry = True
-                
-            except ValueError:
-                retry = True
-
-            if retry:
-                beta *= 0.5
             else:
-                if verbose:
-                    print("v0:         {}".format(solution_x.depart.v))
-                    print("ra:         {}".format(solution_x.depart.ra))
-                    print("eps:        {}".format(solution_x.eps * 180/np.pi))
-                    print("constraint: {}".format(solution_x.g))
-                    print("gradient:   {}".format(solution_x.dg_dv0))
-                    print("beta:       {}".format(beta))
-                    print("dv0:        {}".format(dv0))
+                raise ZeroDivisionError("zero derivative encountered")
 
-                    print("------------------------------")
-                
-                yield solution_x
+        # Keep track of previous values
+        fp = f
+        df_dxp = df_dx
+        xp = x
 
-                beta = self.beta0
-
-
-    def optimize_deltav(self, solution_x,
-                        max_restore_iterations  = 100,
-                        max_optimize_iterations = 100,
-                        verbose                 = False):
-
-        # Flags
-        underflow = False
-
-        # Start by optimizing until we meet our constraint.
-        self.optimize_v0(x, max_iterations = max_restore_iterations, verbose = verbose)
-        x = np.array([[self.lam1], [self.v0]]) # SGRA state
-        solution_xt = solution_x
-        xt = np.array(x)
-        current_f = solution_x.f
-
-        p   = solution_x.dF_dx
-        if self.conjugate:
-            Fx2 = solution_x.Q_opt
-
-        for jj in range(0, max_optimize_iterations):
-            if underflow:
-                raise ValueError("unable to optimize due to restoration underflow")
-            elif self.Q_opt <= self.Qtol:
-                break
-
-            alpha = minimize_scalar(Psi, method = 'golden', bracket = [1e-14, 3e-5],
-                                    args=(self,p), tol=self.alphatol).x
-            for ii in range(0, max_restore_iterations):
-                dx = -alpha * p
-                y  =  xt + dx
-                if np.all(y == xt):
-                    underflow = True
-                    break
-
-                solution_y = init_patched_conic(solution_xt, dx)
-
-                if self.conjugate:
-                    Fhatx2 = np.array(Fx2)
-                    phat   = np.array(p)
-
-                solution_xt = restore_patched_conic(solution_y,
-                                                    tol            = self.gtol,
-                                                    max_iterations = max_restore_iterations,
-                                                    verbose        = verbose)
-
-                if self.conjugate:
-                    Fx2 = solution_xt.Q_opt
-                    gamma = Fx2 / Fhatx2
-                
-                p   = solution_xt.dF_dx + gamma * phat
-
-                # If original solution is better than the current one, try a smaller step
-                if solution_xt.f < self.f:
-                    break
-                else:
-                    alpha *= 0.9
-                    if alpha <= 1e-15:
-                        raise ValueError("unable to optimize due to step underflow")
-
-            if ii + 1 == max_iterations:
-                raise ValueError("exceeded max iterations during restoration")
+        # Get next value
+        x  = xp + dx
         
-        
-        # Looks like we found a result. Let's update the object.
-        self.lam1 = solution_xt.lam1
-        self.r1   = np.sqrt(self.D**2 + self.r_soi**2 - 2.0 * self.D * self.r_soi * np.cos(solution_xt.lam1))
-        self.update(solution_xt.v0)
+        # If update fails due to nan, try again with a smaller beta.
+        try:
+            f, df_dx = newton_eval(fun_fprime, x, *args)
+            if minimize:
+                if np.abs(dx) < tol:
+                    break
+            if np.abs(f) < np.abs(fp):
+                retry = False
+            else:
+                retry = True
+        except FloatingPointError:
+            retry = True
+        except ValueError:
+            retry = True
+
+        if retry:
+            f = fp
+            df_dx = df_dxp
+            x = xp
+            beta *= beta_factor
+        elif beta < beta0:
+            beta /= beta_factor
+            if beta > beta0:
+                beta = beta0
+        #    beta = beta0 # reset beta
+
+    if ii >= maxiter-1:
+        raise ValueError("exceeded max iterations")
+
+    return x
 
 
+def optimize_deltav(x, *args,
+                    maxiter          = 100,
+                    gtol             = 5e-5,
+                    Ptol             = 1e-5,
+                    Qtol             = 2e-15,
+                    alphatol         = 1e-12,
+                    conjugate        = False,
+                    newton_maxiter   = 100,
+                    alpha_maxiter    = 100,
+                    gradient_maxiter = 100,
+                    restore_maxiter  = 100,
+                    sigma_maxiter    = 100,
+                    plot_alpha       = False):
+
+    # For this lambda1, find the v0 that meets our constraint (correct
+    # perilune radius) using Newton's method. This will be our
+    # starting point.
+    root_v0 = newton(patched_conic_g_dg_dv0,
+                     x[1],
+                     (x[0], *args),
+                     tol = gtol,
+                     maxiter = newton_maxiter,
+                     disp = False)
+    x[1] = root_v0
+    print("x0 = {}".format(x))
+    
+    XS.append(x)
+    YS.append(x)
+
+    pcx = init_patched_conic(x, *args)
+    dpcx = PatchedConicGradients(pcx)
+
+    alpha = 0.03
+    # Get step (alpha), direction (p), and merit function gradient (dFdx)
+    alpha, p, dFdx2 = find_gradient(x, *args,
+                                    dfdx      = dpcx.df_dx,
+                                    dgdx      = dpcx.dg_dx,
+                                    conjugate = conjugate,
+                                    maxiter   = alpha_maxiter,
+                                    alphabracket = [0.0, alpha],
+                                    alphatol  = alphatol,
+                                    plot      = plot_alpha)
+    print("alpha = {}, p = {}".format(alpha, p))
+
+
+    for ii in range(0, gradient_maxiter):
+        # Gradient phase:
+        dx = -alpha * p.flatten()
+        print("dx = {}".format(dx))
+        y  = x + dx
+        print("y = {}".format(y))
+
+        # Restoration phase
+        try:
+            xt, pcxt, dpcxt = restoration(y, *args, tol = Ptol, maxiter = restore_maxiter, sigma_maxiter = sigma_maxiter)
+            fail = False
+        except ValueError as e:
+            fail = True
+
+        if fail or pcxt.f >= pcx.f: # reduce stepsize and repeat
+            print("Reducing alpha step size to {} ({})".format(alpha, fail))
+            if not fail:
+                print("\tQ = {}".format(dpcxt.Q))
+            alpha *= 0.5
+
+        else: # Proceed to next gradient phase (unless we're beneath Qtol)
+            print("post-restoration: alpha = {}\tf = {}\tg = {}\tQ = {}".format(alpha, pcxt.f, pcxt.g, dpcxt.Q))
+
+            pcx  = pcxt
+            x    = xt
+            dpcx = dpcxt
+
+            XS.append(x)
+
+            # Normally this should be the finishing condition, but it
+            # ain't working for some reason. That's fine. We'll assume
+            # we're done when alpha won't get any smaller. It seems to
+            # work.
+            if dpcx.Q <= Qtol: # If we get here, we're done
+                return x, pcx
+            
+            print("\tQ = {}".format(dpcx.Q))
+
+
+            alpha, p, dFdx2 = find_gradient(x, *args,
+                                            dfdx      = dpcx.df_dx,
+                                            dgdx      = dpcx.dg_dx,
+                                            conjugate = conjugate,
+                                            maxiter   = alpha_maxiter,
+                                            alphatol  = alphatol,
+                                            plot      = plot_alpha)
+
+        #import pdb
+        #pdb.set_trace()
+        #if np.abs(alpha) < alphatol:
+        #    return x, pcx            
+
+    print("Warning: exceeded max iterations (gradient phase)")
+    import pdb
+    pdb.set_trace()
+    
+    return x, pcx
 
 if __name__ == '__main__':
 
+    leo    = Orbit.circular(PatchedConic.mu_earth, 6378136.6 + 185000.0) # earth parking
+
+    XS = []
+    YS = []
+
+
+    optimize_deltav(np.array([49.9 * np.pi/180.0,
+                              leo.v + 3200.0]),
+                    1837400.0, leo.r, leo.phi,
+                    conjugate = True)
+
+
+    YS = np.vstack(YS)
     import matplotlib.pyplot as plt
-
-    ax = None
-
-    leo    = Orbit.circular(PatchedConic.mu_earth, 6371400.0 + 185000.0) # earth parking
-    x      = init_patched_conic((leo.r, leo.v + 3200.0, 0.0, 90.0 * np.pi/180.0, 1937400.0))
-    opt    = SGRA()
-    alpha  = 1.0
-    for x in opt.optimize_v0(x, verbose=True):
-        ax = x.plot(alpha = alpha, ax = ax)
-        alpha *= 0.9
-        
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.set_title("SGRA optimization progress")
+    ax.set_xlabel("\lambda_1 (deg)")
+    ax.set_ylabel("v_0 (m/s)")
+    ax.plot(np.array(YS[:,0]) * 180/np.pi, np.array(YS[:,1]), alpha=0.7)
+    ax.text(YS[0,0] * 180/np.pi, YS[0,1], s='initial')
+    ax.text(YS[-1,0] * 180/np.pi, YS[-1,1], s='final')
     plt.show()
+    
+        
+    #opt    = SGRA()
+    #alpha  = 1.0
+    #for x in opt.optimize_v0(x, verbose=True):
+    #    ax = x.plot(alpha = alpha, ax = ax)
+    #    alpha *= 0.9   
+    #plt.show()
 

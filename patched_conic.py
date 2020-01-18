@@ -20,14 +20,14 @@ def rotate_2d(theta):
 class PatchedConic(Orbit):
     # Physical constants of earth--moon system
     D = 384402000.0 # distance from earth to moon in m
-    OMEGA = 2.649e-3 # r/s
+    OMEGA = 2.649e-3 # angular velocity of moon about earth r/s
     V = OMEGA * D # mean velocity of moon relative to earth in m/s
-    
+
     R = 1737000.0 # m -- radius of moon
     mu = 4.9048695e12 # m^3/s^2 moon gravitational constant
     mu_earth = 3.986004418e14 # m^3/s^2 earth gravitational constant
-    r_soi = (mu / mu_earth)**0.4 * D
-    
+    r_soi = (mu / mu_earth)**0.4 * D # 
+
     def __init__(self, depart, arrive,
                  lam1    = 0.0,
                  rf      = 1837000.0):
@@ -81,7 +81,7 @@ class PatchedConic(Orbit):
         gam1 = np.arcsin(sg1) # gam1 is opposite lam1 in the arrival
                               # triangle (see Fig 1); phase angle at
                               # arrival
-        
+
         # gam0 is the phase angle at departure
         gam0 = nu1 - nu0 - gam1 - self.OMEGA * tof
 
@@ -96,7 +96,7 @@ class PatchedConic(Orbit):
         seps2 = np.clip( (self.V * np.cos(lam1) - v1 * np.cos(lam1 + gam1 - phi1)) / -v2, -1.0, 1.0 )
         eps2  = np.arcsin(seps2)
 
-        # Eq. 10: Get selenocentric flight path angle 
+        # Eq. 10: Get selenocentric flight path angle
         # right-hand side:
         tan_lam1_pm_phi2 = - v1 * np.sin(phi1 - gam1) / (self.V - v1 * np.cos(phi1 - gam1))
         phi2 = np.arctan(tan_lam1_pm_phi2) - lam1 # flight path angle
@@ -132,16 +132,16 @@ class PatchedConic(Orbit):
         # Compute gradients for SGRA
         self.compute_gradients()
 
-        
+
     def compute_gradients(self):
         orbit = self
-        
+
         # Setup some shorthand notations
         v0 = orbit.depart.v
         v1 = orbit.arrive.v
         v2 = orbit.v
         vM = orbit.V
-        
+
         Q2 = orbit.Q
 
         phi0 = orbit.depart.phi
@@ -194,7 +194,7 @@ class PatchedConic(Orbit):
         slam1 = np.sin(lam1)
         clam1 = np.cos(lam1)
         h     = orbit.arrive.h
-        
+
         self.deltav1 = np.abs(v0 - np.sqrt(mu / r0))
         self.deltav2 = orbit.vpl - orbit.vf
 
@@ -266,7 +266,7 @@ class PatchedConic(Orbit):
             earth = Circle( (0.0, 0.0), 6371000.0, fc='blue', ec='blue', alpha=0.5)
             ax.add_patch(moon)
             ax.add_patch(earth)
-            
+
             # Plot orbit of moon
             moon_orbit = Circle( (0.0, 0.0), self.D, fill=False, fc=None, alpha=0.5)
             ax.add_patch(moon_orbit)
@@ -294,10 +294,10 @@ class PatchedConic(Orbit):
 
         vm = np.array([0.0, -self.V]) * v_scale
         ax.plot([r1[0] + v1[0], r1[0] + v1[0] + vm[0]], [r1[1] + v1[1], r1[1] + v1[1] + vm[1]], c='b', alpha=alpha)
-        
+
         return ax
 
-            
+
 
 
     #def dF_dx(self, lam):
@@ -320,7 +320,7 @@ def init_patched_conic(solution_x, dx = np.array([[0.0], [0.0]])):
     """
     if type(solution_x) == PatchedConic:
         solution_x = (solution_x.depart.r, solution_x.depart.v, solution_x.depart.phi, solution_x.lam1, solution_x.rf)
-    
+
     D         = PatchedConic.D
     r_soi     = PatchedConic.r_soi
     r0        = solution_x[0]
@@ -335,10 +335,10 @@ def init_patched_conic(solution_x, dx = np.array([[0.0], [0.0]])):
         import pdb
         pdb.set_trace()
         raise ValueError("expected radius is not reached")
-    
+
     return PatchedConic(depart, intercept, lam1 = lam1, rf = rf)
 
-    
+
 def Psi(alpha, solution_x, p):
     solution_y = init_patched_conic(solution_x, -p * alpha)
     return solution_y.f + solution_y.g * solution_x.lam
@@ -351,7 +351,7 @@ class SGRA(object):
     mu_moon = PatchedConic.mu
     mu_earth = PatchedConic.mu_earth
     r_soi = PatchedConic.r_soi
-    
+
     def __init__(self,
                  gtol           = 5e-8,
                  ftol           = 1e-15,
@@ -380,7 +380,7 @@ class SGRA(object):
 
         """
         beta = self.beta0
-        
+
         for ii in range(0, max_iterations):
 
             # Stop if we reach our desired constraint tolerance
@@ -400,7 +400,7 @@ class SGRA(object):
                     retry = False
                 else:
                     retry = True
-                
+
             except ValueError:
                 retry = True
 
@@ -415,7 +415,7 @@ class SGRA(object):
                     print("dv0:        {}".format(dv0))
                     print("eps:        {}".format(solution_x.eps * 180/np.pi))
                     print("------------------------------")
-                
+
                 yield solution_x
 
                 beta = self.beta0
@@ -469,7 +469,7 @@ class SGRA(object):
                 if self.conjugate:
                     Fx2 = solution_xt.Q_opt
                     gamma = Fx2 / Fhatx2
-                
+
                 p   = solution_xt.dF_dx + gamma * phat
 
                 # If original solution is better than the current one, try a smaller step
@@ -482,8 +482,8 @@ class SGRA(object):
 
             if ii + 1 == max_iterations:
                 raise ValueError("exceeded max iterations during restoration")
-        
-        
+
+
         # Looks like we found a result. Let's update the object.
         self.lam1 = solution_xt.lam1
         self.r1   = np.sqrt(self.D**2 + self.r_soi**2 - 2.0 * self.D * self.r_soi * np.cos(solution_xt.lam1))
@@ -504,7 +504,7 @@ if __name__ == '__main__':
     for x in opt.optimize_v0(x, verbose=True):
         ax = x.plot(alpha = alpha, ax = ax)
         alpha *= 0.5
-        
+
         #import pdb
         #pdb.set_trace()
         pass

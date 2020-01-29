@@ -20,13 +20,13 @@ def rotate_2d(theta):
 class PatchedConic(Orbit):
     # Physical constants of earth--moon system
     D = 384402000.0 # distance from earth to moon in m
-    OMEGA = 2.649e-3 # angular velocity of moon about earth r/s
+    OMEGA = 2.649e-3 # angular velocity of moon about earth rad/s
     V = OMEGA * D # mean velocity of moon relative to earth in m/s
 
     R = 1737000.0 # m -- radius of moon
     mu = 4.9048695e12 # m^3/s^2 moon gravitational constant
     mu_earth = 3.986004418e14 # m^3/s^2 earth gravitational constant
-    r_soi = (mu / mu_earth)**0.4 * D # 
+    r_soi = (mu / mu_earth)**0.4 * D # sphere of influence radius around moon in m
 
     def __init__(self, depart, arrive,
                  lam1    = 0.0,

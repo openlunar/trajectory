@@ -73,66 +73,83 @@ end
 Af = x̄ -> ForwardDiff.jacobian(f, x̄); #Jacobian of Linearlize Dynamics
 J(x,u) = (x-x₀)'*(x-x₀) + ones(6)'*[I(3); -I(3)]*u #Objective function
 
-function c(x,u,dt)
-    N = Int64(length(x)/6)
-    c = zeros(6*(N-1))
+function c(X̄)
+    N = Int64((length(X̄)+4)/10)
+    # N = 2
+
+    x̄ = X̄[1:6N]
+    ū = X̄[6N+1:9N-3]
+    dt̄ = X̄[9N-2:end]
+    # c = Vector{Float64}(undef, 6*(N-1))
+    c = Array{Any,1}(undef,6*(N-1))
+    # c = zeros(6*(N-1))
     for n = 1:N-1
-        c[n*6-5:n*6] = x[(n+1)*6-5:(n+1)*6] - f([x[n*6-5:n*6]; u[n*3-2:n*3]; dt[n]])
+        c[n*6-5:n*6] = x̄[(n+1)*6-5:(n+1)*6] - f([x̄[n*6-5:n*6]; ū[n*3-2:n*3]; dt̄[n]])
     end
     return c
 end
 
-Af = x̄ -> ForwardDiff.jacobian(f, x̄); #Jacobian of Linearlize Dynamics
+# function c(xₙ₊₁, xₙ, uₙ, dtₙ)
+#     x = x̄[1:6]
+#     u = x̄[7:9]
+#     dt = x̄[10]
+#     # c = Vector{Float64}(undef, 6*(N-1))
+#
+#     c = x[(n+1)*6-5:(n+1)*6] - f([x[n*6-5:n*6]; u[n*3-2:n*3]; dt[n]])
+#
+# end
 
-function BeresheetKKT()
+Ac = x̄ -> ForwardDiff.jacobian(c, x̄); #Jacobian of Linearlize Dynamics
+
+# function BeresheetKKT()
     # Load in the starting trajectory
-    cd("/home/rexlab/trajectory/beresheet/")
-    file = matopen("BeresheetTrajectory.mat")
-    xt = read(file,"BeresheetTraj")
-    close(file)
-    N,M = size(xt)
-    x₀ = reshape(xt[:,1:6]',N*6,1)
-    t₀ = xt[:,7];
-    dt₀ = t[2:end] - t[1:end-1]
+cd("/home/rexlab/trajectory/beresheet/")
+file = matopen("BeresheetTrajectory.mat")
+xt = read(file,"BeresheetTraj")
+close(file)
+N,M = size(xt)
+x̄₀ = reshape(xt[:,1:6]',N*6,1)
+t̄₀ = xt[:,7];
+dt̄₀ = t̄₀[2:end] - t̄₀[1:end-1]
+ū₀ = zeros(3*(N-1))
 
-    #Regularization into CR3BP coords
-    RUNIT = 384400 #[km] Distance from Earth to Moon in CR3BP
-    TUNIT = 27.32*24*60*60/2π # [sec] Sidereal Period of the moon is about 27.32 days
-    VUNIT = RUNIT/TUNIT
-    for i = 1:N
-        x₀[6i-5:6i-3] /= RUNIT
-        x₀[6i-2:6i] /= VUNIT
-    end
-    t₀ /= TUNIT
-    dt₀ /= TUNIT
-
-    model = Model(CR3BPdynamics!,6,1)
-    model_d = rk4(model)
+#Regularization into CR3BP coords
+RUNIT = 384400 #[km] Distance from Earth to Moon in CR3BP
+TUNIT = 27.32*24*60*60/2π # [sec] Sidereal Period of the moon is about 27.32 days
+VUNIT = RUNIT/TUNIT
+for i = 1:N
+    x̄₀[6i-5:6i-3] /= RUNIT
+    x̄₀[6i-2:6i] /= VUNIT
 end
-
-function nonLinearKKT(x, x₀; b=1, iter=20)
-
-    J(x) = 2x #Jacobian of constraint
-
-    Φ(x,x₀) = f(x,x₀) + 10*norm(c(x)) #Merit function
-
-    H1(x) =[I J(x)]
-    H2(x) =[J(x)' 0]
-    H̄(x) = [H1(x);H2(x)]
+t̄₀ /= TUNIT
+dt̄₀ /= TUNIT
 
 
-    x = xᵢ
-    println("x = ", x)
-    println("|x| = ", norm(x))
+# model = Model(CR3BPdynamics!,6,1)
+# model_d = rk4(model)
+# end
 
-    # plot(x)
-    x₁ =  Array{Float64,1}(undef, iter)
-    x₂ =  Array{Float64,1}(undef, iter)
-    x₁[1] = x[1]
-    x₂[1] = x[2]
+function nonLinearKKT(x̄₀; b=1, iter=20)
+    N = length(x̄₀)
+    ū = zeros(3*(N-1))
 
-    z₁ = zeros(iter)
-    z₂ = zeros(iter)
+
+    H1(x̄) =[I Ac(x̄)]
+    H2(x̄) =[Ac(x̄)' 0]
+    H̄(x̄) = [H1(x̄);H2(x̄)]
+
+    x̄ = x̄₀
+    # println("x = ", x)
+    # println("|x| = ", norm(x))
+
+    # # plot(x)
+    # x₁ =  Array{Float64,1}(undef, iter)
+    # x₂ =  Array{Float64,1}(undef, iter)
+    # x₁[1] = x[1]
+    # x₂[1] = x[2]
+
+    # z₁ = zeros(iter)
+    # z₂ = zeros(iter)
 
     δx = [1,1]
 

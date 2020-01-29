@@ -1,8 +1,11 @@
 clc
 close all
 clear all
-
-setearth
+%%
+addpath('~/jared711@stanford.edu/STANFORD/Research/OrbitalResearch/misc/util/')
+addpath('~/trajectory/beresheet/')
+addpath('~/StanfordMATLAB/')
+setEarthMoonGlobal
 
 %% Read in data from .txt file
 xx = readtable("BeresheetTrajectory.txt");
@@ -13,8 +16,24 @@ infmt = 'dd MMM yyyy HH:mm:ss.SSS';
 datetimes = datetime(dates,'InputFormat',infmt);
 t0 = datenum(datetimes(1));
 t = datenum(datetimes) - t0;
+t = t*24*60*60; %[sec]
 
 x = table2array(xx(:,2:end));
+
+%% rotating back into the xy plane
+Rx = rotx(-23.5);
+Ry = roty(-5);
+plot_rv([Ry*Rx*x(:,1:3)';x(:,4:6)'])
+
+%%
+x(:,1:3) = x(:,1:3)./RUNIT;
+x(:,4:6) = x(:,4:6)./VUNIT;
+t = t/TUNIT;
+xrot = inert2rot(x',t)';
+xt = [xrot,t];
+
+plot_CR3BP
+plot_rv(xrot)
 
 %% finding the maneuvers and discontinuities
 

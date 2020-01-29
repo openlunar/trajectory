@@ -24,18 +24,18 @@ def rotate_2d(theta):
 
 class PatchedConic(Orbit):
     # Physical constants of earth--moon system
-    D = 384402000.0 # distance from earth to moon in m
-    OMEGA = 2.649e-6 # r/s
-    V = OMEGA * D # mean velocity of moon relative to earth in m/s
+    OMEGA = 2.649e-6 # r/s (mean)
     
     R = 1737400.0 # m -- radius of moon
     mu = 4.902800066163796e12 # m^3/s^2 moon gravitational constant
     mu_earth = 3.986004354360959e14 # m^3/s^2 earth gravitational constant
-    r_soi = (mu / mu_earth)**0.4 * D
+    r_soi = (mu / mu_earth)**0.4 * 384402000.0 # use mean distance for SOI calculation
     
     def __init__(self, depart, arrive,
                  lam1      = 0.0,
-                 rf        = 1837000.0):
+                 rf        = 1837000.0,
+                 D         = 384402000.0,
+                 V         = 2.649e-6 * 384402000.0):
         """Construct a planar patched conic approximation of an earth--moon
         transfer.
 
@@ -48,8 +48,11 @@ class PatchedConic(Orbit):
                   sphere-of-influence intercept and moon--earth
                   vector)
           rf      final desired radius of lunar orbit
-
+          D       lunar distance at SOI arrival (defaults to the mean)
+          V       lunar velocity at SOI arrival (defaults to the mean)
         """
+        self.D = D
+        self.V = V
 
         self.depart  = depart
         self.arrive  = arrive
@@ -88,21 +91,21 @@ class PatchedConic(Orbit):
                               # arrival
         
         # gam0 is the phase angle at departure
+        # Note: This is approximate, since it depends on a fixed OMEGA
         gam0 = nu1 - nu0 - gam1 - self.OMEGA * tof
 
         # Eq. 9: velocity relative to moon when we reach SOI
         phi1 = arrive.phi # computed by Orbit.at()
         v1 = arrive.v
-        vm = self.V
-        v2 = np.sqrt(v1**2 + vm**2 - 2.0 * v1 * vm * np.cos(phi1 - gam1))
+        v2 = np.sqrt(v1**2 + V**2 - 2.0 * v1 * V * np.cos(phi1 - gam1))
 
         # Compute miss angle of hyperbolic trajectory
-        seps2 = np.clip( (vm * np.cos(lam1) - v1 * np.cos(lam1 + gam1 - phi1)) / -v2, -1.0, 1.0 )
+        seps2 = np.clip( (V * np.cos(lam1) - v1 * np.cos(lam1 + gam1 - phi1)) / -v2, -1.0, 1.0 )
         eps2  = np.arcsin(seps2)
 
         # Eq. 10: Get selenocentric flight path angle 
         # right-hand side:
-        tan_lam1_pm_phi2 = - v1 * np.sin(phi1 - gam1) / (vm - v1 * np.cos(phi1 - gam1))
+        tan_lam1_pm_phi2 = - v1 * np.sin(phi1 - gam1) / (V - v1 * np.cos(phi1 - gam1))
         phi2 = np.arctan(tan_lam1_pm_phi2) - lam1 # flight path angle
 
         # Parameters for Orbit class
@@ -135,6 +138,7 @@ class PatchedConic(Orbit):
 
         self.deltav1 = np.abs(self.depart.v - np.sqrt(self.mu_earth / self.depart.r))
         self.deltav2 = self.vpl - self.vf
+        self.tof     = tof
 
         # Objectives
         self.g = self.rf - self.rpl
@@ -324,11 +328,12 @@ class PatchedConicGradients(object):
 def init_patched_conic(x,
                        rf   = 1837400.0,
                        r0   = 6371000.0 + 185000.0,
-                       phi0 = 0.0):
+                       phi0 = 0.0,
+                       D    = 384402000.0,
+                       V    = 2.649e-6 * 384402000.0):
     """Generic objective function. x is [lam1, v0]."""
     lam1      = x[0]
     v0        = x[1]
-    D         = PatchedConic.D
     r_soi     = PatchedConic.r_soi
     r1        = np.sqrt(D**2 + r_soi**2 - 2.0 * D * r_soi * np.cos(lam1))
     depart    = Orbit(PatchedConic.mu_earth, r0, v0, phi0)
@@ -345,19 +350,19 @@ def patched_conic_g(x, *args):
     return init_patched_conic(x, *args).g
 
 
-def patched_conic_nr_g(x, lam1, rf, r0, phi0):
+def patched_conic_nr_g(x, lam1, *args):
     """Input for newton-raphson iteration"""
-    return patched_conic_g(np.array([lam1, x]), rf, r0, phi0)
+    return patched_conic_g(np.array([lam1, x]), *args)
 
-def patched_conic_dg_dv0(x, lam1, rf, r0, phi0):
-    pcx = init_patched_conic(np.array([lam1, x]), rf, r0, phi0)
+def patched_conic_dg_dv0(x, lam1, *args):
+    pcx = init_patched_conic(np.array([lam1, x]), *args)
     dx = PatchedConicGradients(pcx)
     print("g      = {}".format(pcx.g))
     print("dg_dv0 = {}".format(dx.dg_dv0))
     return dx.dg_dv0
 
-def patched_conic_g_dg_dv0(x, lam1, rf, r0, phi0):
-    pcx = init_patched_conic(np.array([lam1, x]), rf, r0, phi0)
+def patched_conic_g_dg_dv0(x, lam1, *args):
+    pcx = init_patched_conic(np.array([lam1, x]), *args)
     dx = PatchedConicGradients(pcx)
     print("g      = {}".format(pcx.g))
     print("dg_dv0 = {}".format(dx.dg_dv0))
@@ -443,8 +448,6 @@ def find_gradient(x, *args, conjugate = False,
         else:
             gamma = dFdx2 / dFdx2_prev
         p = dFdx + p_prev * gamma
-        import pdb
-        pdb.set_trace()
     else:
         p = dFdx
         dFdx2 = dFdx.T.dot(dFdx)
@@ -528,10 +531,17 @@ def find_restore_step(y, *args, maxiter=100, disp=True):
 def restoration(y, *args, tol=1e-5, maxiter=100, sigma_maxiter=100):
     xt, pcxt, dpcxt = find_restore_step(y, *args, maxiter = sigma_maxiter)
 
+    try:
+        YS
+    except NameError:
+        YS = []
+    
     ii = 0
     while pcxt.P > tol:
         y = xt
+
         YS.append(y)
+            
         xt, pcxt, dpcxt = find_restore_step(y, *args, maxiter = sigma_maxiter)
 
         if norm(xt - y) < tol:
@@ -655,9 +665,13 @@ def optimize_deltav(x, *args,
                      disp = False)
     x[1] = root_v0
     print("x0 = {}".format(x))
-    
-    XS.append(x)
-    YS.append(x)
+
+    try:
+        XS.append(x)
+        YS.append(x)
+    except NameError:
+        XS = []
+        YS = []
 
     pcx = init_patched_conic(x, *args)
     dpcx = PatchedConicGradients(pcx)
@@ -721,20 +735,16 @@ def optimize_deltav(x, *args,
                                             maxiter   = alpha_maxiter,
                                             alphatol  = alphatol,
                                             plot      = plot_alpha)
-
-        #import pdb
-        #pdb.set_trace()
-        #if np.abs(alpha) < alphatol:
-        #    return x, pcx            
+    
 
     print("Warning: exceeded max iterations (gradient phase)")
-    import pdb
-    pdb.set_trace()
     
     return x, pcx
 
 if __name__ == '__main__':
 
+    D      = 384402000.0
+    V      = 2.649e-6 * D
     leo    = Orbit.circular(PatchedConic.mu_earth, 6378136.6 + 185000.0) # earth parking
 
     XS = []
@@ -743,7 +753,7 @@ if __name__ == '__main__':
 
     optimize_deltav(np.array([49.9 * np.pi/180.0,
                               leo.v + 3200.0]),
-                    1837400.0, leo.r, leo.phi,
+                    1837400.0, leo.r, leo.phi, D, V,
                     conjugate = True)
 
 

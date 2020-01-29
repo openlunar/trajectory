@@ -17,7 +17,7 @@ def dynamics(t, x):
     f[3:6] += f_moon[3:6]
     return f
 
-def propagate_to(fun, t0, x0, t1, **kwargs):
+def propagate_to(fun, t0, x0, t1, plot = True, **kwargs):
     integ = RK45(fun, t0, x0, t1, **kwargs)
 
     mrs = []
@@ -33,15 +33,15 @@ def propagate_to(fun, t0, x0, t1, **kwargs):
         ts.append(integ.t)
         mrs.append(norm(integ.y[0:3] - integ.y[6:9]))
         ers.append(norm(integ.y[0:3]))
-        
-    import matplotlib.pyplot as plt
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    ax.plot(np.array(ts) - t0, mrs)
-    ax.plot(np.array(ts) - t0, ers)
-    ax.axhline(66183267.4546323)
-    plt.show()
-    
+
+    if plot:
+        import matplotlib.pyplot as plt
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.plot(np.array(ts) - t0, mrs)
+        ax.plot(np.array(ts) - t0, ers)
+        ax.axhline(66183267.4546323)
+        plt.show()
 
     return integ.y
 

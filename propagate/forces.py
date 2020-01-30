@@ -3,7 +3,7 @@ import numpy as np
 from scipy.linalg import norm
 
 
-def gravity(t, x, mu = None, label = None):
+def gravity(t, x, mu):
     f = np.zeros_like(x)
     r = norm(x[:3])
     
@@ -12,7 +12,7 @@ def gravity(t, x, mu = None, label = None):
     return f
 
 
-def j2_gravity(t, x, mu = None, j2 = None, r_m = None):
+def j2_gravity(t, x, mu, j2 = None, r_m = None):
     f = np.zeros_like(x)
     r = norm(x[0:3])
     

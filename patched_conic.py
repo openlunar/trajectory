@@ -42,7 +42,10 @@ class PatchedConic(Orbit):
     mu_earth = 3.986004418e14 # m^3/s^2 earth gravitational constant
     r_soi = (mu / mu_earth)**0.4 * D # sphere of influence radius around moon in m
 
+<<<<<<< HEAD
 >>>>>>> Beresheet trajectory added
+=======
+>>>>>>> bd2503a74f196abdda901ef5195d920e803261b4
     def __init__(self, depart, arrive,
                  lam1      = 0.0,
                  rf        = 1837000.0,
@@ -205,6 +208,7 @@ class PatchedConic(Orbit):
         return ax
 
 
+<<<<<<< HEAD
 class PatchedConicGradients(object):
     def __init__(self, patched_conic):
         
@@ -217,6 +221,8 @@ class PatchedConicGradients(object):
         Q2 = patched_conic.Q
 =======
 
+=======
+>>>>>>> bd2503a74f196abdda901ef5195d920e803261b4
     def compute_gradients(self):
         orbit = self
 
@@ -393,6 +399,10 @@ class PatchedConicGradients(object):
 >>>>>>> Beresheet trajectory added
 
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> bd2503a74f196abdda901ef5195d920e803261b4
 
 
     #def dF_dx(self, lam):
@@ -432,6 +442,7 @@ def init_patched_conic(x,
     intercept = depart.at(r1, sign='+')
     if np.isnan(intercept.v):
         raise ValueError("expected radius is not reached")
+<<<<<<< HEAD
 <<<<<<< HEAD
     elif depart.energy >= 0:
         raise ValueError("expected elliptical orbit")
@@ -579,6 +590,11 @@ def find_gradient(x, *args, conjugate = False,
 
     return PatchedConic(depart, intercept, lam1 = lam1, rf = rf)
 
+=======
+
+    return PatchedConic(depart, intercept, lam1 = lam1, rf = rf)
+
+>>>>>>> bd2503a74f196abdda901ef5195d920e803261b4
 
 def Psi(alpha, solution_x, p):
     solution_y = init_patched_conic(solution_x, -p * alpha)
@@ -749,6 +765,7 @@ def restoration(y, *args, tol=1e-5, maxiter=100, sigma_maxiter=100):
             
         xt, pcxt, dpcxt = find_restore_step(y, *args, maxiter = sigma_maxiter)
 
+<<<<<<< HEAD
         if norm(xt - y) < tol:
             print("Skipping restoration (y == xt)")
             return xt, pcxt, dpcxt
@@ -933,6 +950,8 @@ def optimize_deltav(x, *args,
             
             print("\tQ = {}".format(dpcx.Q))
 =======
+=======
+>>>>>>> bd2503a74f196abdda901ef5195d920e803261b4
             if ii + 1 == max_iterations:
                 raise ValueError("exceeded max iterations during restoration")
 

@@ -5,6 +5,8 @@ clear all
 addpath('~/jared711@stanford.edu/STANFORD/Research/OrbitalResearch/misc/util/')
 addpath('~/trajectory/beresheet/')
 addpath('~/StanfordMATLAB/')
+
+%%
 setEarthMoonGlobal
 
 %% Read in data from .txt file

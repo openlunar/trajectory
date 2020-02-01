@@ -20,7 +20,7 @@ from spice_loader import SpiceLoader
 import propagate as prop
 from propagate import Dynamics
 
-from propagate.forces import gravity, j2_gravity
+from propagate.forces import gravity, j2_gravity, zero_gravity
 
 
 class InitialState(object):
@@ -79,6 +79,7 @@ class InitialState(object):
         self.x_moon_depart = x_moon_depart
         self.x_moon_arrive = x_moon_arrive
         self.deltav        = v0 - v0m
+        #self.r1            = pcx.arrive.r
         #self.x_arrive = np.hstack((r1, v1))
 
     @property
@@ -101,7 +102,7 @@ def disperse(deltav,
     import pyquat.random as pqr
     #axis = axis_generator(**axis_generator_kwargs)
 
-    # STUB: FIXME
+    # STUB: FIXME'
 
 
 if __name__ == '__main__':
@@ -117,17 +118,23 @@ if __name__ == '__main__':
     print("Initial ECI state is {}".format(init.x_depart_pre))
 
 
-    dynamics = Dynamics(fun_earth = j2_gravity,
+    # Can change gravity to j2_gravity, or alternatively to
+    # zero_gravity if you want it to be off for a body.
+    dynamics = Dynamics(fun_earth = gravity,
                         fun_moon  = gravity)
-    t, x = prop.propagate_to_lunar_radius(dynamics, init.depart_time,
-                                          np.hstack((init.x_depart_post, init.x_moon_depart)),
+    x0 = np.hstack((init.x_depart_post, init.x_moon_depart, np.identity(6).reshape(36)))
+    
+    t, x, Phi = prop.propagate_to_lunar_radius(dynamics, init.depart_time, x0,
+                                          PatchedConic.r_soi, arrival_time + 2 * 24 * 3600.0)
+
+    x01 = np.array(x0)
+    x01[0] += 1.0
+    
+    t1, x1, Phi1 = prop.propagate_to_lunar_radius(dynamics, init.depart_time, x01,
                                           PatchedConic.r_soi, arrival_time + 2 * 24 * 3600.0)
     
     print("{}: {}, {}".format(t, norm(x[0:3] - x[6:9]), PatchedConic.r_soi))
-    #full_state = np.hstack((init.x_depart_post, init.x_moon_depart))
-    #import pdb
-    #pdb.set_trace()
-    #x = prop.propagate_to(prop.dynamics, init.depart_time,
-    #                      full_state,
-    #                      arrival_time,
-    #                      max_step = 600.0)
+
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D
+    plt.show()

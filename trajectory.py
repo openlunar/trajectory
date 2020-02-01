@@ -119,15 +119,15 @@ if __name__ == '__main__':
 
     dynamics = Dynamics(fun_earth = j2_gravity,
                         fun_moon  = gravity)
-    t, x = prop.propagate_to_lunar_radius(dynamics, init.depart_time,
-                                          np.hstack((init.x_depart_post, init.x_moon_depart)),
+    x0 = np.hstack((init.x_depart_post, init.x_moon_depart, np.identity(6).reshape(36)))
+    
+    t, x, Phi = prop.propagate_to_lunar_radius(dynamics, init.depart_time, x0,
+                                          PatchedConic.r_soi, arrival_time + 2 * 24 * 3600.0)
+
+    x01 = np.array(x0)
+    x01[0] += 1.0
+    
+    t1, x1, Phi1 = prop.propagate_to_lunar_radius(dynamics, init.depart_time, x01,
                                           PatchedConic.r_soi, arrival_time + 2 * 24 * 3600.0)
     
     print("{}: {}, {}".format(t, norm(x[0:3] - x[6:9]), PatchedConic.r_soi))
-    #full_state = np.hstack((init.x_depart_post, init.x_moon_depart))
-    #import pdb
-    #pdb.set_trace()
-    #x = prop.propagate_to(prop.dynamics, init.depart_time,
-    #                      full_state,
-    #                      arrival_time,
-    #                      max_step = 600.0)

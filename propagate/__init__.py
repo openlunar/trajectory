@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.linalg import norm
 
-from scipy.integrate import RK45
+from scipy.integrate import RK45, solve_ivp
 
 from propagate.forces import j2_gravity, gravity
 
@@ -58,8 +58,8 @@ class Dynamics(object):
 
         return f
         
-def propagate_to(fun, t0, x0, t1, plot = True, **kwargs):
-    integ = RK45(fun, t0, x0, t1, **kwargs)
+def propagate_to(fun, t0, x0, t1, plot = True, integrator = RK45, **kwargs):
+    integ = integrator(fun, t0, x0, t1, **kwargs)
 
     mrs = []
     ers = []
@@ -90,65 +90,25 @@ def propagate_to_lunar_radius(fun, t0, x0, r2, t1_max,
                               min_step = 1e-5,
                               plot     = True,
                               axes     = None,
-                              **kwargs):
-    integ = RK45(fun, t0, x0, t1_max, max_step = max_step, **kwargs)
+                              method   = 'RK45'):
 
-    ts = []
-    rs = []
+    def lunar_radius(t, y):
+        return norm(y[0:3] - y[6:9]) - r2
+    lunar_radius.terminal = True
     
-    time   = t0
-    radius = norm(integ.y[0:3] - integ.y[6:9])
-    while radius > r2 and integ.status != 'failed':
-        ts.append(time)
-        rs.append(radius)
-
-        try:
-            integ.step()
-        except ValueError:
-            print("Warning: Integration step failure")
-            break
-            
-        prev_time   = time
-        prev_radius = radius
-        time        = integ.t
-        radius      = norm(integ.y[0:3] - integ.y[6:9])
-
-        num   = radius - prev_radius
-        denom = time - prev_time
-        if denom < min_step:
-            break
-        rdot = num / denom
-        dt = -(radius - r2) / rdot
-        
-        print("dt = {}, step_size = {}".format(dt, integ.step_size))
-        if dt > 0 and dt < max_step:
-            integ.max_step = dt
-
-    ts.append(time)
-    rs.append(radius)
-
-    interp = integ.dense_output()
-    print("dt = {}, step_size = {}".format(dt, integ.step_size))
+    result = solve_ivp(fun, (t0, t1_max), x0, method = method, events = lunar_radius)
 
     if plot:
         import matplotlib.pyplot as plt
         if not axes:
             fig = plt.figure()
             axes = fig.add_subplot(111)
-        axes.plot(np.array(ts) - t0, rs)
+        axes.plot(result.t, norm(result.y[0:3,:] - result.y[6:9,:], axis=0))
         axes.axhline(r2)
-
-        x_soi = interp(integ.t - dt)
-        axes.scatter([integ.t - dt - t0], [ norm(x_soi[0:3] - x_soi[6:9]) ], c='r')
-
-        x_2 = interp(integ.t + dt)
-        axes.scatter([integ.t + dt - t0], [ norm(x_2[0:3] - x_2[6:9]) ], c='b')
-        
         #plt.show()
     
 
-    y = interp(integ.t - dt)
-    return integ.t - dt, y[0:12], y[12:].reshape((6,6))
+    return result.t[-1], result.y[0:12,-1], result.y[12:,-1].reshape((6,6))
 
     
 

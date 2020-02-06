@@ -15,9 +15,10 @@ function cubicSpline(x₀,t₀,k)
     SSᵣ = zeros(M,1);
 
     q = 0
-    t = t₀
+
     abcd = zeros(4M,k)
     x = zeros(M,k)
+    t = zeros(k,1)
     for i = 1:k
         if i <= N%k
             T = Int64(ceil(N/k))
@@ -30,7 +31,7 @@ function cubicSpline(x₀,t₀,k)
         j₀ = 0
         for j = 1:T
             q += 1
-            A[j₀+1:j₀+M,:] = [I(6)*t[q]^3 I(6)*t[q]^2 I(6)*t[q] I(6)*1]
+            A[j₀+1:j₀+M,:] = [I(6)*t₀[q]^3 I(6)*t₀[q]^2 I(6)*t₀[q] I(6)*1]
             b[j₀+1:j₀+M] = x₀[:,q]
             j₀ += M
         end
@@ -39,12 +40,12 @@ function cubicSpline(x₀,t₀,k)
         b = abcd[M+1:2M,i]
         c = abcd[2M+1:3M,i]
         d = abcd[3M+1:4M,i]
-        x[:,i] = a*t[q]^3 + b*t[q]^2 + c*t[q] + d
-
+        x[:,i] = a*t₀[q]^3 + b*t₀[q]^2 + c*t₀[q] + d
+        t[i] = t₀[q]
         SSᵣ += sqrt.((x₀[:,q] - x[:,i]).^2)
     end
 
-    return x, SSᵣ
+    return x, t, SSᵣ
 end
 
 cd("/home/rexlab/trajectory/beresheet/")
@@ -57,8 +58,17 @@ t̄₀ = xt[:,7];
 dt̄₀ = t̄₀[2:end] - t̄₀[1:end-1]
 ū₀ = zeros(3*(N-1))
 
-x, SSᵣ = cubicSpline(x̄₀,t̄₀,1000)
+x, t, SSᵣ = cubicSpline(x̄₀,t̄₀,1000)
 plot(x̄₀[1,:],x̄₀[2,:])
 plot(x[1,:],x[2,:])
 
+plot(t)
+
 Juno.@enter cubicSpline(x̄₀,t̄₀,1000)
+
+cd("/home/rexlab/trajectory/beresheet/")
+file = matopen("BeresheetCR3BP.mat")
+xCR3BP = read(file,"rv_CR3BP")
+pos_moon = read(file,"pos_moon")
+tCR3BP = read(file,"theta")
+close(file)

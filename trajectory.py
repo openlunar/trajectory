@@ -31,7 +31,7 @@ class InitialState(object):
         # Get the state of the moon at arrival so we know how far out
         # we need to go and how fast.
         x_moon_arrive = spice.spkez(301, arrival_time, 'J2000', 'NONE', 399)[0] * 1000.0
-        
+
         # Produce patched conic
         x, pcx = pc.optimize_deltav(np.array([49.9 * np.pi/180.0,
                                               leo.v + 3200.0]),
@@ -42,7 +42,7 @@ class InitialState(object):
 
         depart_time = arrival_time - pcx.tof
         free_flight_sweep_angle = pcx.nu1 - pcx.nu0
-        
+
         # Get state of moon at departure so we can figure out the
         # plane of our trajectory.
         x_moon_depart = spice.spkez(301, depart_time,  'J2000', 'NONE', 399)[0] * 1000.0
@@ -55,7 +55,7 @@ class InitialState(object):
         hhat = np.cross(rm0hat, rm1hat)
         hhat /= norm(hhat)
         T_eci_to_pqw = spice.twovec(rm1hat, 1, hhat, 3)
-        
+
         # Get directions to initial and final vectors
         r1hat = T_eci_to_pqw.T.dot(rotate_z(pcx.gam1).dot(np.array([1.0, 0, 0])))
         r0hat = T_eci_to_pqw.T.dot(rotate_z(pcx.gam1 - free_flight_sweep_angle).dot(np.array([1.0, 0.0, 0.0])))
@@ -93,7 +93,7 @@ class InitialState(object):
     def v0_pre(self):
         return self.x_depart_pre[3:6]
 
-    
+
 def disperse(deltav,
              sigma_dtheta = 0.0,
              sfe          = 0.0):
@@ -111,7 +111,7 @@ if __name__ == '__main__':
     # Arbitrary arrival date at SOI (assuming model)
     arrival_date = '21JUN2022'
     arrival_time = spice.utc2et(arrival_date)
-    
+
 
     init = InitialState(arrival_time)
     print("Initial ECI state is {}".format(init.x_depart_pre))
@@ -120,14 +120,23 @@ if __name__ == '__main__':
     dynamics = Dynamics(fun_earth = j2_gravity,
                         fun_moon  = gravity)
     x0 = np.hstack((init.x_depart_post, init.x_moon_depart, np.identity(6).reshape(36)))
-    
+
     t, x, Phi = prop.propagate_to_lunar_radius(dynamics, init.depart_time, x0,
                                           PatchedConic.r_soi, arrival_time + 2 * 24 * 3600.0)
 
     x01 = np.array(x0)
     x01[0] += 1.0
-    
+
     t1, x1, Phi1 = prop.propagate_to_lunar_radius(dynamics, init.depart_time, x01,
                                           PatchedConic.r_soi, arrival_time + 2 * 24 * 3600.0)
-    
+
     print("{}: {}, {}".format(t, norm(x[0:3] - x[6:9]), PatchedConic.r_soi))
+
+    dx = Phi.dot(np.array([1,0,0,0,0,0]))
+    dx1 = Phi1.dot(np.array([1,0,0,0,0,0]))
+
+    print("{}".format(x))
+    print("{}".format(x1))
+    print("{}".format(dx))
+    print("{}".format(dx1))
+    print("{}".format(x1-x))

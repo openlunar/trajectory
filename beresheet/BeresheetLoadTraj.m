@@ -51,14 +51,14 @@ for i = 1:(length(x))
 end
 
 figure()
-plot(t,r)
+plot(r)
 xlabel('t [days]')
 ylabel('r [km]')
 grid on
 title('Distance from Earth')
 
 figure()
-plot(t,v)
+plot(v)
 xlabel('t [days]')
 ylabel('v [km/s]')
 grid on

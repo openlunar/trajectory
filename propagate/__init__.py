@@ -58,10 +58,20 @@ class Dynamics(object):
             f[12:48] = Phi_dot.reshape(36)
 
         return f
-        
-def propagate_to(fun, t0, x0, t1, plot = False, integrator = DOP853, axes = None, label = '', **kwargs):
-    integ = integrator(fun, t0, x0, t1, **kwargs)
 
+def default_atol():
+    atol = np.ones(48) * 1e-15
+    atol[3:6] *= 1e-3
+    return atol
+    
+def propagate_to(fun, t0, x0, t1, plot = False, integrator = DOP853, axes = None, label = '',
+                 atol = None,
+                 **kwargs):
+    if atol is None:
+        atol = default_atol()
+    
+    integ = integrator(fun, t0, x0, t1, **kwargs)
+    
     mrs = []
     ers = []
     ts = []
@@ -94,9 +104,26 @@ def propagate_to(fun, t0, x0, t1, plot = False, integrator = DOP853, axes = None
 
     return integ.t, integ.y[0:12], integ.y[12:].reshape((6,6))
 
+def plot_solve_ivp_result(result, axes = None):
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D
+    if not axes:
+        fig = plt.figure()
+        axes = fig.add_subplot(111, projection='3d')
+
+    y = result.y[0:3,:]# - result.y[6:9,:]
+    m = result.y[6:9,:]
+    
+    axes.plot(y[0,:], y[1,:], y[2,:], label='trajectory')
+    axes.plot(m[0,:], m[1,:], m[2,:], label='moon')
+
+    mx, my, mz = result.y[6:9,-1]
+    print("Moon pos: {}, {}, {}".format(mx, my, mz))
+    axes.plot([0, mx], [0, my], [0, mz], label='arrival')
+    return axes
+
 def propagate_to_lunar_radius(fun, t0, x0, r2, t1_max,
                               max_step   = 600.0,
-                              first_step = 1.0,
                               plot       = False,
                               axes       = None,
                               method     = 'DOP853',
@@ -108,24 +135,40 @@ def propagate_to_lunar_radius(fun, t0, x0, r2, t1_max,
     lunar_radius.terminal = True
 
     if atol is None:
-        atol = np.ones(48) * 1e-15
-        atol[3:6] *= 1e-3
+        atol = default_atol()
     
     result = solve_ivp(fun, (t0, t1_max), x0, method = method, events = lunar_radius,
-                       rtol=rtol, atol=atol, max_step=max_step, first_step=first_step)
+                       rtol=rtol, atol=atol, max_step=max_step)
 
     if plot:
-        import matplotlib.pyplot as plt
-        if not axes:
-            fig = plt.figure()
-            axes = fig.add_subplot(111)
-        axes.plot(result.t, norm(result.y[0:3,:] - result.y[6:9,:], axis=0))
-        axes.axhline(r2)
-        #plt.show()
-    
+        axes = plot_solve_ivp_result(result, axes)
+        axes.axhline(r2)       
 
     return result.t[-1], result.y[0:12,-1], result.y[12:,-1].reshape((6,6))
 
-    
+def propagate_to_periselene(fun, t0, x0,
+                            t1_max   = None,
+                            max_step = 600.0,
+                            method   = 'DOP853',
+                            plot     = False,
+                            axes     = None,
+                            rtol     = 1e-9,
+                            atol     = None):
 
+    def periselene(t, y):
+        x_lci = y[0:6] - y[6:12]
+        r_hat = x_lci[0:3] / norm(x_lci[0:3])
+        v_hat = x_lci[3:6] / norm(x_lci[3:6])
+        return np.dot(r_hat, v_hat) < 1e-6
+    periselene.terminal = True
     
+    if atol is None:
+        atol = default_atol()
+    
+    result = solve_ivp(fun, (t0, t1_max), x0, method = method, events = periselene,
+                       rtol=rtol, atol=atol, max_step=max_step)
+
+    if plot:
+        axes = plot_solve_ivp_result(result, axes)
+    
+    return result.t[-1], result.y[0:12,-1], result.y[12:,-1].reshape((6,6))

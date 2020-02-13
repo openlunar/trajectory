@@ -116,10 +116,30 @@ if __name__ == '__main__':
 
 
     dynamics = CR3BP_Dynamics()
-    x0 = np.array([0.5,0,0,0,0.5,0])
+    x0 = np.array([0.9,0,0,0,0.5,0])
+    t0 = 0.
+    tf = 10.
+    #
+    t, x = prop.propagate_to(dynamics, t0, x0, tf, plot=True)
+    print("t = {}, x = {}".format(t,x))
 
-    t, x = prop.propagate_to(dynamics, 0., x0, 10)
-    print("{}, {}".format(t,x))
+    x0STM= np.hstack((x0, np.identity(6).reshape(36)))
+    tSTM, xSTM, Phi = prop.propagate_to(dynamics, t0, x0STM, tf, plot=True)
+    print("t = {}, xSTM = {}".format(tSTM,xSTM))
+    print("Phi = {}".format(Phi))
+
+    dx0 = np.array([1e-6,0,0,0,0.5,0])
+    x01 = np.array(x0)+dx0
+
+    t1, x1 = prop.propagate_to(dynamics, t0, x01, tf, plot=False)
+
+    dx = x1 - x
+    err = Phi.dot(dx0) - dx
+
+    print("x = {}".format(x))
+    print("x1 = {}".format(x1))
+    print("dx = {}".format(dx))
+    print("err = {}".format(err))
 
     # x01 = np.array(x0)
     # x01[0] += 1.0

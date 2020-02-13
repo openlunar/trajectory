@@ -94,18 +94,19 @@ class CR3BP_Dynamics(object):
 
         gradient = True if len(f) > 6 else False
 
-        f[0:6] = self.fun_CR3BP(x[0:6], self.mu_CR3BP)
+        f[0:6], G = self.fun_CR3BP(x[0:6], self.mu_CR3BP, gradient=gradient)
 
-        # if len(f) > 12:
-        #     G += G_moon
-        #
-        #     # Compute state transition matrix time derivative
-        #     Phi = x[12:48].reshape((6,6))
-        #     F   = np.vstack(( np.hstack(( np.zeros((3,3)), np.identity(3)  )),
-        #                       np.hstack(( G,               np.zeros((3,3)) )) ))
-        #
-        #     Phi_dot  = F.dot(Phi)
-        #     f[12:48] = Phi_dot.reshape(36)
+        if len(f) > 6:
+
+            # Compute state transition matrix time derivative
+            Phi = x[6:42].reshape((6,6))
+            H = np.array([[0.,2.,0.],[-2.,0.,0.],[0.,0.,0.]])
+
+            F   = np.vstack(( np.hstack(( np.zeros((3,3)), np.identity(3)  )),
+                              np.hstack(( G,               H )) ))
+
+            Phi_dot  = F.dot(Phi)
+            f[6:42] = Phi_dot.reshape(36)
 
         return f
 
@@ -129,9 +130,9 @@ def propagate_to(fun, t0, x0, t1, plot = True, integrator = RK45, **kwargs):
             mrs.append(norm(integ.y[0:3] - integ.y[6:9]))
         else:
             mrs.append(norm(integ.y[0:3]))
-            x.append(integ.y[0])
-            y.append(integ.y[1])
         ers.append(norm(integ.y[0:3]))
+        x.append(integ.y[0])
+        y.append(integ.y[1])
 
     if plot:
         print("I'm plotting")
@@ -150,12 +151,16 @@ def propagate_to(fun, t0, x0, t1, plot = True, integrator = RK45, **kwargs):
         # ax.axhline(66183267.4546323)
         plt.show()
 
-    if len(integ.y) > 12:
+    if len(integ.y) == 48:
         return integ.t, integ.y[0:12], integ.y[12:].reshape((6,6))
-    elif len(integ.y) > 6:
+    elif len(integ.y) == 42:
+        return integ.t, integ.y[0:6], integ.y[6:].reshape((6,6))
+    elif len(integ.y) == 12:
         return integ.t, integ.y[0:12]
-    else:
+    elif len(integ.y) == 6:
         return integ.t, integ.y[0:6]
+    else:
+        raise Exception('Integrator output is incorrect size')
 
 def propagate_to_lunar_radius(fun, t0, x0, r2, t1_max,
                               max_step = 600.0,

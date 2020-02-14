@@ -18,6 +18,7 @@ from patched_conic import PatchedConic
 
 from spice_loader import SpiceLoader
 import propagate as prop
+import ephemeris as eph
 from propagate import Dynamics
 
 from propagate.forces import gravity, j2_gravity, zero_gravity
@@ -130,22 +131,16 @@ if __name__ == '__main__':
     axes = fig.add_subplot(111, projection='3d')
     
     t, x, Phi = prop.propagate_to_periselene(dynamics, init.depart_time, x0,
-                                             arrival_time + 2 * 24 * 3600.0,
-                                             plot = True,
-                                             axes = axes)
-    r_moon = x[0:3] - x[6:9]
-    
-    x01 = np.array(x0)
-    x01[0] += 1.0
-    
-    t1, x1, Phi1 = prop.propagate_to(dynamics, init.depart_time, x01, t,
-                                     plot = True,
-                                     axes = axes)
-    
-    print("{}: {}, {}".format(t, norm(x[0:3] - x[6:9]), PatchedConic.r_soi))
+                                              arrival_time + 2 * 24 * 3600.0,
+                                              plot = True,
+                                              axes = axes)
 
+    ts, xs, x, Phi = eph.make_ephemeris('mission.spk', 'transit', dynamics, init.depart_time, x0, t,
+                                          plot = True,
+                                          axes = axes)
 
     plt.show()
 
-    import pdb
-    pdb.set_trace()
+    
+    
+

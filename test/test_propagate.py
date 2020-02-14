@@ -36,12 +36,11 @@ class Test_Propagate(unittest.TestCase):
         self.t, self.x, self.Phi = propagate_to_lunar_radius(self.dynamics, self.init.depart_time, np.array(self.x0),
                                                              PatchedConic.r_soi, self.arrival_time + 2 * 24 * 3600.0, plot = False,
                                                              method = 'DOP853')
-        
 
     def test_propagate_to(self):
         """Time-based propagation should give the same final state as to-lunar-radius propagation"""
         self.setup_propagate_to_lunar_radius()
-        t, x, Phi = propagate_to(self.dynamics, self.t0, np.array(self.x0), self.t, plot = False,
+        ts, xs, x, Phi = propagate_to(self.dynamics, self.t0, np.array(self.x0), self.t, plot = False,
                                  integrator = spint.DOP853, rtol=self.rtol, atol=self.atol)
         np.testing.assert_allclose(x[0:6], self.x[0:6], atol=1e-1)
 
@@ -104,8 +103,8 @@ class Test_Propagate(unittest.TestCase):
             # How much x0 deviates from the original:
             dx0 = x0[0:6] - self.x0[0:6]
             
-            t, x, Phi = propagate_to(self.dynamics, self.t0, x0, self.t,
-                                     label = str(ii), rtol=self.rtol, atol=self.atol, max_step = 600.0)
+            ts, xs, x, Phi = propagate_to(self.dynamics, self.t0, x0, self.t,
+                                          label = str(ii), rtol=self.rtol, atol=self.atol, max_step = 600.0)
 
             stm_dx = self.Phi.dot(dx0)
             true_dx = x[0:6] - self.x[0:6]

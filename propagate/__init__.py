@@ -73,7 +73,7 @@ def propagate_to(fun, t0, x0, t1, plot = False, integrator = DOP853, axes = None
     integ = integrator(fun, t0, x0, t1, **kwargs)
     
     mrs = []
-    ers = []
+    xs = []
     ts = []
 
     count = 0
@@ -86,11 +86,12 @@ def propagate_to(fun, t0, x0, t1, plot = False, integrator = DOP853, axes = None
 
         ts.append(integ.t)
         mrs.append(norm(integ.y[0:3] - integ.y[6:9]))
-        ers.append(integ.y[0:3])
+        xs.append(integ.y[0:6])
 
+    xs = np.vstack(xs).T
+    ts = np.vstack(ts)
     print("integration step count: {}".format(count))
     if plot:
-        ers = np.vstack(ers).T
         
         import matplotlib.pyplot as plt
         from mpl_toolkits.mplot3d import Axes3D
@@ -99,10 +100,11 @@ def propagate_to(fun, t0, x0, t1, plot = False, integrator = DOP853, axes = None
             fig = plt.figure()
             axes = fig.add_subplot(111, projection='3d')
         #axes.plot(np.array(ts) - t0, mrs)
-        axes.plot(ers[0,:], ers[1,:], ers[2,:], label = label, alpha=0.6)
+        axes.plot(xs[0,:], xs[1,:], xs[2,:], label = label, alpha=0.6)
         axes.axhline(66183267.4546323)
 
-    return integ.t, integ.y[0:12], integ.y[12:].reshape((6,6))
+    return ts, xs, integ.y[0:12], integ.y[12:].reshape((6,6))
+
 
 def plot_solve_ivp_result(result, axes = None):
     import matplotlib.pyplot as plt

@@ -116,7 +116,7 @@ if __name__ == '__main__':
 
 
     dynamics = CR3BP_Dynamics()
-    x0 = np.array([0.9,0,0,0,0.5,0])
+    x0 = np.array([0.5,0,0,0,0.5,0])
     t0 = 0.
     tf = 10.
     #

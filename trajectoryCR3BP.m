@@ -2,7 +2,7 @@ clc
 clear all
 close all
 
-addpath('jared711@stanford.edu/STANFORD/Research/OrbitalResearch/misc/util/')
+addpath('~/jared711@stanford.edu/STANFORD/Research/OrbitalResearch/misc/util/')
 setEarthMoonGlobal
 
 t0 = 0;

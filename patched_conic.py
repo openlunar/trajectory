@@ -357,15 +357,11 @@ def patched_conic_nr_g(x, lam1, *args):
 def patched_conic_dg_dv0(x, lam1, *args):
     pcx = init_patched_conic(np.array([lam1, x]), *args)
     dx = PatchedConicGradients(pcx)
-    print("g      = {}".format(pcx.g))
-    print("dg_dv0 = {}".format(dx.dg_dv0))
     return dx.dg_dv0
 
 def patched_conic_g_dg_dv0(x, lam1, *args):
     pcx = init_patched_conic(np.array([lam1, x]), *args)
     dx = PatchedConicGradients(pcx)
-    print("g      = {}".format(pcx.g))
-    print("dg_dv0 = {}".format(dx.dg_dv0))
     return pcx.g, dx.dg_dv0
 
 
@@ -430,7 +426,8 @@ def find_gradient(x, *args, conjugate = False,
                   alphatol     = 1e-8,
                   alphabracket = [1e-11, 0.1],
                   maxiter      = 100,
-                  plot         = True):
+                  plot         = True,
+                  disp         = False):
 
     from scipy.optimize import minimize_scalar
 
@@ -460,7 +457,7 @@ def find_gradient(x, *args, conjugate = False,
                     alphabracket[0], (x, *args, lam, p),
                     tol     = alphatol,
                     maxiter = maxiter,
-                    disp    = True,
+                    disp    = disp,
                     minimize = True)
 
     if plot:
@@ -528,8 +525,8 @@ def find_restore_step(y, *args, maxiter=100, disp=True):
     return xt, pcxt, dpcxt
 
 
-def restoration(y, *args, tol=1e-5, maxiter=100, sigma_maxiter=100):
-    xt, pcxt, dpcxt = find_restore_step(y, *args, maxiter = sigma_maxiter)
+def restoration(y, *args, tol=1e-5, maxiter=100, sigma_maxiter=100, disp=False):
+    xt, pcxt, dpcxt = find_restore_step(y, *args, maxiter = sigma_maxiter, disp=disp)
 
     try:
         YS
@@ -541,11 +538,16 @@ def restoration(y, *args, tol=1e-5, maxiter=100, sigma_maxiter=100):
         y = xt
 
         YS.append(y)
+<<<<<<< HEAD
 
         xt, pcxt, dpcxt = find_restore_step(y, *args, maxiter = sigma_maxiter)
+=======
+            
+        xt, pcxt, dpcxt = find_restore_step(y, *args, maxiter = sigma_maxiter, disp = disp)
+>>>>>>> master
 
         if norm(xt - y) < tol:
-            print("Skipping restoration (y == xt)")
+            if disp: print("Skipping restoration (y == xt)")
             return xt, pcxt, dpcxt
 
         if ii >= maxiter:
@@ -593,7 +595,7 @@ def newton(fun_fprime, x, args,
 
         try:
             dx = -beta * (f / df_dx)
-            print("dx = {}".format(dx))
+            if disp: print("dx = {}".format(dx))
         except FloatingPointError:
             if minimize:
                 break
@@ -652,6 +654,7 @@ def optimize_deltav(x, *args,
                     gradient_maxiter = 100,
                     restore_maxiter  = 100,
                     sigma_maxiter    = 100,
+                    disp             = False,
                     plot_alpha       = False):
 
     # For this lambda1, find the v0 that meets our constraint (correct
@@ -662,9 +665,10 @@ def optimize_deltav(x, *args,
                      (x[0], *args),
                      tol = gtol,
                      maxiter = newton_maxiter,
-                     disp = False)
+                     disp = disp)
     x[1] = root_v0
-    print("x0 = {}".format(x))
+    if disp:
+        print("x0 = {}".format(x))
 
     try:
         XS.append(x)
@@ -685,32 +689,37 @@ def optimize_deltav(x, *args,
                                     maxiter   = alpha_maxiter,
                                     alphabracket = [0.0, alpha],
                                     alphatol  = alphatol,
-                                    plot      = plot_alpha)
-    print("alpha = {}, p = {}".format(alpha, p))
+                                    plot      = plot_alpha,
+                                    disp      = disp)
+    if disp:
+        print("alpha = {}, p = {}".format(alpha, p))
 
 
     for ii in range(0, gradient_maxiter):
         # Gradient phase:
         dx = -alpha * p.flatten()
-        print("dx = {}".format(dx))
         y  = x + dx
-        print("y = {}".format(y))
+
+        if disp:
+            print("dx = {}".format(dx))
+            print("y = {}".format(y))
 
         # Restoration phase
         try:
-            xt, pcxt, dpcxt = restoration(y, *args, tol = Ptol, maxiter = restore_maxiter, sigma_maxiter = sigma_maxiter)
+            xt, pcxt, dpcxt = restoration(y, *args, tol = Ptol, maxiter = restore_maxiter, sigma_maxiter = sigma_maxiter, disp = disp)
             fail = False
         except ValueError as e:
             fail = True
 
         if fail or pcxt.f >= pcx.f: # reduce stepsize and repeat
-            print("Reducing alpha step size to {} ({})".format(alpha, fail))
-            if not fail:
-                print("\tQ = {}".format(dpcxt.Q))
+            if disp:
+                print("Reducing alpha step size to {} ({})".format(alpha, fail))
+                if not fail:
+                    print("\tQ = {}".format(dpcxt.Q))
             alpha *= 0.5
 
         else: # Proceed to next gradient phase (unless we're beneath Qtol)
-            print("post-restoration: alpha = {}\tf = {}\tg = {}\tQ = {}".format(alpha, pcxt.f, pcxt.g, dpcxt.Q))
+            if disp: print("post-restoration: alpha = {}\tf = {}\tg = {}\tQ = {}".format(alpha, pcxt.f, pcxt.g, dpcxt.Q))
 
             pcx  = pcxt
             x    = xt
@@ -724,8 +733,13 @@ def optimize_deltav(x, *args,
             # work.
             if dpcx.Q <= Qtol: # If we get here, we're done
                 return x, pcx
+<<<<<<< HEAD
 
             print("\tQ = {}".format(dpcx.Q))
+=======
+            
+            if disp: print("\tQ = {}".format(dpcx.Q))
+>>>>>>> master
 
 
             alpha, p, dFdx2 = find_gradient(x, *args,
@@ -734,8 +748,14 @@ def optimize_deltav(x, *args,
                                             conjugate = conjugate,
                                             maxiter   = alpha_maxiter,
                                             alphatol  = alphatol,
+<<<<<<< HEAD
                                             plot      = plot_alpha)
 
+=======
+                                            plot      = plot_alpha,
+                                            disp      = disp)
+    
+>>>>>>> master
 
     print("Warning: exceeded max iterations (gradient phase)")
 

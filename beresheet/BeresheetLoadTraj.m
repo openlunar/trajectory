@@ -52,14 +52,14 @@ end
 
 figure()
 plot(r)
-xlabel('t [days]')
+xlabel('#')
 ylabel('r [km]')
 grid on
 title('Distance from Earth')
 
 figure()
 plot(v)
-xlabel('t [days]')
+xlabel('#')
 ylabel('v [km/s]')
 grid on
 title('Velocity Relative to Earth')

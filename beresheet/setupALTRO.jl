@@ -36,8 +36,14 @@ end
 TrajectoryOptimization.∇²differential(::R2BP, x, Qx) = Diagonal(@SVector zeros(6))
 
 x, t = readmat("BeresheetTrajectory.mat")
-idx0 = 5000
-idxf = 8000
+
+## Maneuver and discontinuity points
+
+
+
+
+idx0 = 000
+idxf = 3500
 N = idxf - idx0
 n = 6 # number of states
 m = 3 # number of controls
@@ -88,6 +94,12 @@ ytraj = [xx[k][2] for k = 1:N]
 utraj = [norm(uu[k][:]) for k = 1:N-1]
 plot(utraj)
 plot(xtraj,ytraj)
+
+ΔV = 0.
+for i = 3200:3499
+    global utraj
+    global ΔV += (utraj[i]+utraj[i-1])/2
+end
 
 ###### Try using cubicSpline to downsample
 xspline, tspline = cubicSpline(x,t,3001)

@@ -39,9 +39,6 @@ x, t = readmat("BeresheetTrajectory.mat")
 
 ## Maneuver and discontinuity points
 
-
-
-
 idx0 = 000
 idxf = 3500
 N = idxf - idx0

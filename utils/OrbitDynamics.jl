@@ -109,7 +109,7 @@ end
 
 function plot_rv(rv)
     r,v = rv_extract(rv)
-    p = plot3d!(r[1,:],r[3,:],r[3,:])
+    p = plot!(r[1,:],r[3,:],r[3,:])
     return p
 end
 
@@ -120,6 +120,6 @@ function plot_sphere(r=1,c=[0,0,0],col='r',n=100)
     y = sin.(u) * sin.(v)';
     z = ones(n) * cos.(v)';
     const_color = cgrad( [ RGB{Float64}(0.,0.,1.) for _ in 1:2 ] )
-    s = surface!(x,y,z,colorbar=false,color=const_color,width=1)
+    s = surface!(r*x,r*y,r*z,colorbar=false,color=const_color,width=1)
     return s
 end

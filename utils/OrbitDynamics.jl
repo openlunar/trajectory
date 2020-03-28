@@ -1,4 +1,4 @@
-using Plots, Colors, LinearAlgebra, MAT
+using Plots, Colors, LinearAlgebra, MAT, SPICE
 plotlyjs()
 
 
@@ -22,7 +22,7 @@ mutable struct body
 end
 
 earth = body("Earth",[0.,0.,1.],398600,5.97237e24,1.495978740473789e8 ,1.160576151685878e-5,3.155814910224000e7, 6371.0084,0)
-moon = body("Moon",[.1,.1,.1],4901.801,7.34767309e22,384400,2.661666501955582e-6,2.3606208e6,1737.5,0.0554)
+moon = body("Moon",[.1,.1,.1],4902.801,7.34767309e22,384400,2.661666501955582e-6,2.3606208e6,1737.5,0.0554)
 
 mutable struct system
     μ
@@ -89,6 +89,46 @@ function apoPeriVel(rA,rP)
     return vA,vP
 end
 
+function rv2oe(rv,μ = 3.986e5)
+    # Outputs orbital elements for a given state [r;v]
+    r = rv[1:3]
+    v = rv[4:6]
+    # specific angular momentum
+    h = cross(r,v)
+    # directions of angular momentum
+    W = h/norm(h)
+
+    i = atan(sqrt(W[1]^2+W[2]^2),W[3])
+
+    if i == 0 || i == pi/2
+        Ω = NaN
+    else
+        Ω = atan(W[1],-W[2])
+    end
+
+    p = norm(h)^2/μ
+    a = (2/norm(r) - norm(v)^2/μ)^(-1)
+    n = sqrt(μ/a^3)
+    e = sqrt(1 - p/a)
+    E = atan((r'*v)/(n*a^2),(1-norm(r)/a))
+    ν = E2nu(E,e)
+    u = atan(r[3]/sin(i),r[1]*cos(Ω) + r[2]*sin(Ω))
+    ω = u-ν
+    return a,e,i,Ω,ω,ν
+end
+
+function E2nu(E,e)
+    #outputs true anomaly ν
+    ν = 2*atan(sqrt((1+e)/(1-e))*tan(E/2));
+    while ν >= 2π
+        ν = ν-2π;
+    end
+    while ν < 0
+        ν = ν + 2π;
+    end
+    return ν
+end
+
 function rv_extract!(rv)
     n,m = try n,m = size(rv)
     catch
@@ -140,6 +180,8 @@ function R3BPdynamics(t,rv,μ=[earth.μ;moon.μ]) # inplace dynamics
     vmdot = -μ[1]*rm/norm(rm)^3
     rvdot = [rdot; vdot; rmdot; vmdot]
 end
+
+
 
 function CR3BPdynamics!(rvdot,rv,μ,t) #Three body dynamics in Earth/Moon System
     x,y,z,vx,vy,vz = xyz_extract(rv)
@@ -232,12 +274,12 @@ function plot_circle(r=1,c=[0,0,0],col='b',n=100)
     return c
 end
 
-function ode8(F,t0,tf,y0,tol=1e-6,etol=1e-13;h=(tf-t0)/10000)
+function ode8(F,t0,tf,y0,tol=1e-6,etol=1e-13;h=(tf-t0)/1000)
     y = y0
     t = t0
 
     tout = t
-    yout = y'
+    yout = y
     # τ = tol*max(norm(y,Inf),1)
     if tf > t0
         while (t < tf)
@@ -246,18 +288,20 @@ function ode8(F,t0,tf,y0,tol=1e-6,etol=1e-13;h=(tf-t0)/10000)
             t = t + h
             y = rk8(F,y,t,h)
             tout = [tout; t]
-            yout = [yout; y']
+            yout = [yout y]
         end
     else
+        h = -h
         while (t > tf)
-            if t + h < t; h = tf; end
+            if t+h < tf; h = tf-t; end
             #step forward in time
             t = t + h
             y = rk8(F,y,t,h)
             tout = [tout; t]
-            yout = [yout; y']
+            yout = [yout y]
         end
     end
+    yout = [yout[:,i] for i = 1:length(tout)]
     return tout, yout
 
 end
@@ -265,7 +309,7 @@ end
 
 
 function rk8(F,y,t,h)
-    α    = [ 2/27 1/9 1/6 5/12 .5 5/6 1/6 2/3 1/3 1 0 1 ]';
+    α    = [ 2/27; 1/9; 1/6; 5/12; .5; 5/6; 1/6; 2/3; 1/3; 1; 0; 1 ];
     β    = [ 2/27       0       0      0        0         0       0         0     0      0     0 0 0;
                 1/36       1/12    0      0        0         0       0         0     0      0     0 0 0;
                 1/24       0       1/8    0        0         0       0         0     0      0     0 0 0;
@@ -278,7 +322,7 @@ function rk8(F,y,t,h)
                 2383/4100  0       0      -341/164 4496/1025 -301/82 2133/4100 45/82 45/164 18/41 0 0 0;
                 3/205      0       0      0        0         -6/41   -3/205    -3/41 3/41   6/41  0 0 0;
                 -1777/4100 0       0      -341/164 4496/1025 -289/82 2193/4100 51/82 33/164 12/41 0 1 0]'
-    χ     = [0 0 0 0 0 34/105 9/35 9/35 9/280 9/280 0 41/840 41/840 ]'; # Difference between two bottom layers of butcher tableau
+    χ     = [0; 0; 0; 0; 0; 34/105; 9/35; 9/35; 9/280; 9/280; 0; 41/840; 41/840 ]; # Difference between two bottom layers of butcher tableau
     # ψ     = [1 0 0 0 0 0      0    0    0     0     1 -1     -1     ]';
     pow   = 1 / 8;
 

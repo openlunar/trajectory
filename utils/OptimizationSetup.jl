@@ -25,9 +25,6 @@ struct CR3BP{T} <: AbstractModel
 end
 Base.size(::CR3BP) = 6,3
 
-abstract type RK8 <: TrajectoryOptimization.Implicit
-end
-
 #Runge-Kutta 8th order integration scheme
 function discrete_dynamics(::Type{RK3}, model::AbstractModel, y::SVector{N,T}, u::SVector{M,T},t, dt::T) where {N,M,T}
     α    = @SVector [ 2/27, 1/9, 1/6, 5/12, .5, 5/6, 1/6, 2/3, 1/3, 1, 0, 1 ];
@@ -103,10 +100,11 @@ function findTraj(x,r_moon,v_moon,idx0,idxf, uu0 = [0.01*rand(6) for k = 1:idxf-
     #Model contains any paramters needed
     model  = R3BP{Float64}(earth.μ, moon.μ)
 
+    ## EDIT THESE TO CHANGE SENSITIVITY TO INITIAL STATE OR CONTROL
     #Weights
-    Q = 1.0*Diagonal(I,n) #Cost of intermediate states
+    Q = 1.0*Diagonal(I,n) #Cost of intermediate states (make large if you want the trajectory to follow really closely)
     Qf = 1.0*Diagonal(I,n) #Cost of final state
-    R = 1.0*Diagonal(I,m) #Cost of control
+    R = 1.0*Diagonal(I,m) #Cost of control (make large if you don't mind if the trajectory deviates as long as the control is small)
 
     #costfuns setting the cost of varying from the initial guess trajectory at each time step
     costfuns = map(1:N) do k #Setting

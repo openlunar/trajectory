@@ -1,13 +1,19 @@
-using Plots, Colors, LinearAlgebra, MAT, SPICE
+using Plots
 plotlyjs()
+using Colors
+using LinearAlgebra
+using MAT
+using Interpolations
+using StaticArrays
+using SPICE
+using SatelliteDynamics
+load_gravity_model(string(dir,"kernels/STU_MoonTopo720.gfc")) #load in lunar gravity field rather than Earth's
+using TrajectoryOptimization
+import TrajectoryOptimization.discrete_dynamics
 
 
 ##  Contains various useful functions for orbital dynamics, including
 #   dynamics for R2BP and CR3BP as well as plotting and frame conversion
-
-# Earth/Moon
-# CR3BP μ = 0.012150577032698
-# μ1=398600,μ2=4904.8695
 
 mutable struct body
     name
@@ -23,6 +29,7 @@ end
 
 earth = body("Earth",[0.,0.,1.],398600,5.97237e24,1.495978740473789e8 ,1.160576151685878e-5,3.155814910224000e7, 6371.0084,0)
 moon = body("Moon",[.1,.1,.1],4902.801,7.34767309e22,384400,2.661666501955582e-6,2.3606208e6,1737.5,0.0554)
+sun = body("Sun",[0.6,0.6,0.],1.32712440042e11, 1.988500e30, 0, 0, 0, 6.957e5, 0)
 
 mutable struct system
     μ
@@ -66,6 +73,21 @@ function xyz_extract(rv)
     else
         error("xyz_extract(rv): rv has incorrect dimensions")
     end
+end
+
+function convert2array(xx)
+    N = length(xx)
+    M = length(xx[1])
+    xx_array = zeros(M,N)
+    for i = 1:M
+        xx_array[i,:] = [xx[k][i] for k = 1:N]
+    end
+    return xx_array
+end
+
+function convert2vector(xx_array)
+    m,n = size(xx_array)
+    xx_vector = [xx_array[:,i] for i = 1:n]
 end
 
 function semimajor(rA,rP)
@@ -127,6 +149,15 @@ function E2nu(E,e)
         ν = ν + 2π;
     end
     return ν
+end
+
+# Integrates the control policy into
+function integ_control(uu,idx0=1,idxf=length(uu);dt=60)
+    Δv = zeros(length(uu[1]))
+    for n = idx0:idxf-1
+        Δv .+= (uu[n+1] .+ uu[n])*dt/2
+    end
+    return Δv
 end
 
 function rv_extract!(rv)
@@ -334,4 +365,73 @@ function rk8(F,y,t,h)
     end
 
     return y + h*f*χ
+end
+
+#HARGRAVES IMPLEMENTATION
+function cubicSpline(x₀,t₀,k)
+#x(t) = at^3 + bt^2 + ct + d where a,b,c,d ∈ ℜ⁶
+    M,N = size(x₀) #let's assume that x ∈ ℜᴹˣᴺ
+                    # M is the size of the state
+                    # N is the number of data points
+    # T₁ = ceil(N/k)
+    # T₂ = floor(N/k)
+    #``
+    # if N != N%k * T₁ + (k-N%k)*T₂
+    #     error("won't have enough knot points")
+    # end
+    SSᵣ = zeros(M,1);
+
+    q = 1
+
+
+    # k = knot*3 + 1
+    numStages = Int64(floor((k-1)/3))
+
+    abcd = zeros(4M,numStages)
+    x = zeros(M,k)
+    t = zeros(1,k)
+    Nₛ = Array{Int64,1}(undef,numStages)
+    Tₛ = zeros(1,numStages)
+    for i = 1:numStages
+        if i <= N%numStages
+            Nₛ[i] = Int64(ceil(N/numStages))
+        else
+            Nₛ[i] = Int64(floor(N/numStages))
+        end
+
+        Tₛ[i] = t₀[Int64(q+Nₛ[i])] - t₀[q]
+
+        τ = zeros(Int64(Nₛ[i]))
+        for j = 1:Int64(Nₛ[i])
+            τ[j] = (t₀[Int64(q+i)]-t₀[Int64(q+i-1)])/Tₛ[i]
+        end
+
+        A = zeros(M*Nₛ[i],M*4)
+        b = zeros(M*Nₛ[i],1)
+        j₀ = 0
+        tₛ = 0
+        for j = 1:Nₛ[i]
+            q += 1
+            A[j₀+1:j₀+M,:] = [I(6)*tₛ^3 I(6)*tₛ^2 I(6)*tₛ I(6)*1]
+            b[j₀+1:j₀+M] = x₀[:,q]
+            j₀ += M
+            tₛ += τ[j]
+        end
+        abcd[:,i] = A\b
+    end
+
+    for i = 1:numStages
+        a = abcd[1:M,i]
+        b = abcd[M+1:2M,i]
+        c = abcd[2M+1:3M,i]
+        d = abcd[3M+1:4M,i]
+
+        x[:,4*(i-1)+1] = a*(0*Tₛ[i]/3)^3 + b*(0*Tₛ[i]/3)^2 + c*(0*Tₛ[i]/3) + d
+        x[:,4*(i-1)+2] = a*(1*Tₛ[i]/3)^3 + b*(1*Tₛ[i]/3)^2 + c*(1*Tₛ[i]/3) + d
+        x[:,4*(i-1)+3] = a*(2*Tₛ[i]/3)^3 + b*(2*Tₛ[i]/3)^2 + c*(2*Tₛ[i]/3) + d
+
+        # t[4*(i-1)+1] = T
+        SSᵣ += sqrt.((x₀[:,q] - x[:,i]).^2)
+    end
+    return x, t, SSᵣ
 end

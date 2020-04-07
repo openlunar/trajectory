@@ -2,25 +2,27 @@ dir = "/home/rexlab/trajectory/"
 include(string(dir,"utils/OrbitDynamics.jl"))
 include(string(dir,"utils/OptimizationSetup.jl"))
 
-# Setup Spice Kernel
-furnsh(string(dir,"kernels/naif0012.tls"))
-furnsh(string(dir,"kernels/de432s.bsp"))
-furnsh(string(dir,"kernels/moon_pa_de421_1900-2050.bpc"))
-furnsh(string(dir,"kernels/moon_080317.tf"))
+# Setup Spice Kernels
+furnsh(string(dir,"kernels/naif0012.tls")) # time kernel
+furnsh(string(dir,"kernels/de432s.bsp")) #main object kernel
+furnsh(string(dir,"kernels/moon_pa_de421_1900-2050.bpc")) #moon orientation kernel
+furnsh(string(dir,"kernels/moon_080317.tf")) #moon coordinate frame kernel
 
-et0 = utc2et("2019-02-22T02:18:40")
-etf = utc2et("2019-04-12T05:18:00")
+et0 = utc2et("2019-02-22T02:18:40") #Beresheet initial launch date
+etf = utc2et("2019-04-12T05:18:00") #Beresheet landing date
 
+# Example code showing how to call Spice functions
 # R = pxform("MOON_PA", "J2000", et0)
 # S = sxform("MOON_PA", "J2000", et0)
-rm = spkpos("moon",et0,"J2000","none","earth")[1]
-# spkezr("moon",et0,"J2000","none","earth")
+# rm = spkpos("moon",et0,"J2000","none","earth")[1]
+# rv = spkezr("moon",et0,"J2000","none","earth")
 
+#Load in initial guess from a mat file
 file = matopen(string(dir,"beresheet/fullBeresheetTraj.mat"))
-xx0 = read(file,"x")
-uu0 = read(file,"u")
-et = read(file,"et")
-t = read(file,"t")
+xx0 = read(file,"x") #state
+uu0 = read(file,"u") #control policy
+et = read(file,"et") #ephemeris times
+t = read(file,"t") #time in seconds starting from 0
 close(file)
 
 plot(xx0[1,:],xx0[2,:],title="Trajectory - Actual Launch Date")

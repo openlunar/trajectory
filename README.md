@@ -1,16 +1,33 @@
 # trajectory
 
-Trajectory optimization algorithms for the earth--moon system.
+Trajectory optimization algorithms for the earth&ndash;moon system.
 
 * [Open Lunar Foundation](https://www.openlunar.org/)
 
 ## Description
 
-This package hopes to become a repository for Python tools for
-optimizing in the Earth--Moon system. Currently it includes only one
-method, which is a planar patched conic strategy optimized via
-sequential gradient restoration algorithm. A circular restricted
-three-body problem solution is also in work.
+This package hopes to become a repository for Python and Julia tools
+for optimizing in the Earth--Moon system. It was a work-in-progress
+when the spacecraft engineering team at Open Lunar Foundation stopped
+work, so it has never been properly organized. This document attempts
+to tell where things can be found.
+
+There are two tools in the repository. They are in (mostly) separate
+branches. The first tool, the Python patched conic cislunar trajectory
+generator, is in the `master` branch. It relies on the sequential
+gradient restoration algorithm to find a minimum delta-v solution. Its
+usage documentation is below.
+
+The second tool is a Julia tool which solves the same problem using
+the circular restricted three-body problem. The challenge was to
+create for a trajectory which roughly copied that of Beresheet,
+allowing for more robust launch windows and greater flexibility in
+midcourse maneuvers. This tool is located in branch `jared`, in the
+`beresheet` directory.
+
+See `beresheet/README.md` in the `jared` branch for the CR3BP tool's
+requirements, installation, usage, contribution information, and
+license.
 
 ## Requirements
 
@@ -30,12 +47,17 @@ out of the repository directory. Forward work includes converting it
 to a package with optimization functions that can be called from other
 scripts.
 
+To checkout the CR3BP Julia code, do
+
+    git checkout jared
+    cd beresheet/
+
 ## Usage
 
 Most scripts are in the project root directory. These can be run from
 a shell, e.g.
 
-    ./patched_conic.py
+    python3 trajectory.py
 
 ## Developers
 
@@ -44,7 +66,7 @@ If you find a bug or wish to make a contribution, use the project's
 
 ## License
 
-Copyright (c) 2019--2020, Open Lunar Foundation.
+Copyright (c) 2020, John O. "Juno" Woods, Jared Blanchard, and Open Lunar Foundation.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without

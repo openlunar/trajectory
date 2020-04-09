@@ -102,15 +102,6 @@ Array{SArray{Tuple{3},Float64,1,3},1}
 ### Changing optimization weights
 The Beresheet trajectory has been used as the initial guess for most work with this repository until now. However, the user can use any initial trajectory `xx_init`, initial and final ephemeris times `et0, etf`, and can even change the weights used in the optimization problem to allow for more flexibility. Shown below is an example setting the maginitude of the Q and R matrices to their default values used in the objective function. 
 
-```math
-\begin{aligned}
-  \min_{x_{0:N},u_{0:N-1}} \quad & \ell_f(x_N) + \sum_{k=0}^{N-1} \ell_k(x_k, u_k, dt) \\
-  \textrm{s.t.}            \quad & x_{k+1} = f(x_k, u_k), \\
-                                 & g_k(x_k,u_k) \leq 0, \\
-                                 & h_k(x_k,u_k) = 0.
-\end{aligned}
-```
-
 ```julia
 xx,uu = optim(xx_init, et0, etf, Qmag=1e-2, Rmag = 1e2) 
 ```

@@ -7,7 +7,7 @@ using Interpolations
 using StaticArrays
 using SPICE
 using SatelliteDynamics
-load_gravity_model(string(dir,"kernels/STU_MoonTopo720.gfc")) #load in lunar gravity field rather than Earth's
+load_gravity_model(string(pwd(),"/kernels/STU_MoonTopo720.gfc")) #load in lunar gravity field rather than Earth's
 using TrajectoryOptimization
 import TrajectoryOptimization.discrete_dynamics
 

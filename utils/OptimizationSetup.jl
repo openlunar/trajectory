@@ -1,3 +1,10 @@
+# Setup Spice Kernels
+
+furnsh(string(pwd(),"/kernels/naif0012.tls")) # time kernel
+furnsh(string(pwd(),"/kernels/de432s.bsp")) #main object kernel
+furnsh(string(pwd(),"/kernels/moon_pa_de421_1900-2050.bpc")) #moon orientation kernel
+furnsh(string(pwd(),"/kernels/moon_080317.tf")) #moon coordinate frame kernel
+
 struct EPHEM{T} <: AbstractModel
     μ::T #Earth's gravitational parameter
     μ2::T #Moon's gravitational parameter
@@ -141,7 +148,7 @@ function findTraj(x,r_moon,v_moon,idx0,idxf, uu0 = [0.01*rand(6) for k = 1:idxf-
     return xx, uu
 end
 
-function optim(xx0, et0, etf, uu0 = [0.01*rand(3) for k = 1:70740])
+function optim(xx0, et0, etf, uu0 = [0.01*rand(3) for k = 1:70740]; Qmag = 1e-2, Rmag = 1e2)
     M,N = size(xx0)
     n = 6 # number of states
     m = 3 # number of controls
@@ -158,9 +165,9 @@ function optim(xx0, et0, etf, uu0 = [0.01*rand(3) for k = 1:70740])
     model  = EPHEM{Float64}(earth.μ, moon.μ, sun.μ, r_moon, R)
 
     #Weights
-    Q = 1.0e-2*Diagonal(I,n) #Cost of intermediate states
+    Q = Qmag*Diagonal(I,n) #Cost of intermediate states (how far the trajectory deviates from the initial)
     Qf = 1.0e-2*Diagonal(I,n) #Cost of final state
-    R = 1.0e2*Diagonal(I,m) #Cost of control
+    R = Rmag*Diagonal(I,m) #Cost of control
 
     #costfuns setting the cost of varying from the initial guess trajectory at each time step
     costfuns = map(1:N) do k

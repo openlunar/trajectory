@@ -1,17 +1,9 @@
-#Change dir based on the machine's file structure
-dir = "/home/rexlab/trajectory/"
+include(string(pwd(),"/utils/OrbitDynamics.jl"))
+include(string(pwd(),"/utils/OptimizationSetup.jl"))
 
-include(string(dir,"utils/OrbitDynamics.jl"))
-include(string(dir,"utils/OptimizationSetup.jl"))
 
-# Setup Spice Kernels
-furnsh(string(dir,"kernels/naif0012.tls")) # time kernel
-furnsh(string(dir,"kernels/de432s.bsp")) #main object kernel
-furnsh(string(dir,"kernels/moon_pa_de421_1900-2050.bpc")) #moon orientation kernel
-furnsh(string(dir,"kernels/moon_080317.tf")) #moon coordinate frame kernel
-
-et0 = utc2et("2019-02-22T02:18:40") #Beresheet initial launch date
-etf = utc2et("2019-04-12T05:18:00") #Beresheet landing date
+# et0 = utc2et("2019-02-22T02:18:40") #Beresheet initial launch date
+# etf = utc2et("2019-04-12T05:18:00") #Beresheet landing date
 
 # Example code showing how to call Spice functions
 # R = pxform("MOON_PA", "J2000", et0)
@@ -20,7 +12,7 @@ etf = utc2et("2019-04-12T05:18:00") #Beresheet landing date
 # rv = spkezr("moon",et0,"J2000","none","earth")
 
 #Load in initial guess from a mat file
-# file = matopen(string(dir,"beresheet/fullBeresheetTraj.mat"))
+# file = matopen(string(pwd(),"/beresheet/fullBeresheetTraj.mat"))
 # xx0 = read(file,"x") #state
 # uu0 = read(file,"u") #control policy
 # et = read(file,"et") #ephemeris times
@@ -44,7 +36,7 @@ etf = utc2et("2019-04-12T05:18:00") #Beresheet landing date
 
 # Try using the Beresheet initial conditions, but a month later
 month = 27.321661*86400 # one month in [sec]
-furnsh(string(dir,"beresheet/fullBeresheetTraj.bsp")) #Load in Beresheet trajectory
+furnsh(string(pwd(),"/beresheet/fullBeresheetTraj.bsp")) #Load in Beresheet trajectory
 et0b = utc2et("2019-02-22T02:20:48.183") #Actual Beresheet launch date
 etfb = utc2et("2019-04-12T05:18:05.187") #Actual Beresheet landing date
 boddef("beresheet",-5441) #define ephemeris object -5441 as Beresheet
@@ -55,7 +47,7 @@ xx_beresheet = convert2array(xx_beresheet) #array needs to be fed into optim()
 
 # Change the date here
 xx,uu = optim(xx_beresheet,et0+month,etf+month) #just one month in the future
-xx,uu = optim(xx_beresheet,et0+12*month,etf+12*month) #one year in the future
+# xx,uu = optim(xx_beresheet,et0+12*month,etf+12*month) #one year in the future
 
 # Plotting the results
 xx_array = convert2array(xx) #Easier to plot if in array form
@@ -65,13 +57,14 @@ uu_norm[5600:6200] = zeros(601)
 uu_norm[36400:36860] = zeros(461)
 plot(uu_norm,title="Maneuvers - 1 Month Later",label="u")
 
-furnsh(string(dir,"beresheet/mission.bsp"))
-et1 = utc2et("2022-06-16T21:45:52.556")
-et2 = utc2et("2022-06-21T15:55:52.556")
-r1 = spkezr("-5440",et1,"J2000","none","earth")[1]
-r2 = spkezr("-5440",et2,"J2000","none","earth")[1]
-
-xx_mission = [spkezr("-5440",et,"J2000","none","earth")[1] for et = et1:60:et2]
-
-xx_mission_array = convert2array(xx_mission)
-plot(xx_mission_array[1,:],xx_mission_array[2,:])
+# #Setup the result of patched_conic.py in the optimizer
+# furnsh(string(pwd(),"/beresheet/mission.bsp"))
+# et1 = utc2et("2022-06-16T21:45:52.556")
+# et2 = utc2et("2022-06-21T15:55:52.556")
+# r1 = spkezr("-5440",et1,"J2000","none","earth")[1]
+# r2 = spkezr("-5440",et2,"J2000","none","earth")[1]
+#
+# xx_mission = [spkezr("-5440",et,"J2000","none","earth")[1] for et = et1:60:et2]
+#
+# xx_mission_array = convert2array(xx_mission)
+# plot(xx_mission_array[1,:],xx_mission_array[2,:])
